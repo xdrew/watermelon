@@ -12,8 +12,10 @@ describe("WatermelonSnapSolo", function () {
 
   const ENTROPY_PROVIDER = "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344";
   const MIN_BET = ethers.parseEther("0.001");
-  const MAX_BET = ethers.parseEther("10");
+  const MAX_BET = ethers.parseEther("0.01");
   const BASIS_POINTS = 10000n;
+  const MULTIPLIER_PER_BAND_BP = 200n;
+  const MULTIPLIER_CAP_BP = 15000n;
 
   beforeEach(async function () {
     [owner, player, treasury] = await ethers.getSigners();
@@ -57,24 +59,30 @@ describe("WatermelonSnapSolo", function () {
     });
 
     it("Should calculate correct multiplier for 10 bands", async function () {
-      // 10000 + (10 * 200) + (10 * 10 * 100) = 10000 + 2000 + 10000 = 22000 (2.2x)
-      expect(await contract.getMultiplierForBands(10)).to.equal(22000n);
+      // 10000 + (10 * 200) = 12000 (1.2x)
+      expect(await contract.getMultiplierForBands(10)).to.equal(12000n);
     });
 
-    it("Should calculate correct multiplier for 30 bands", async function () {
-      // 10000 + (30 * 200) + (30 * 30 * 100) = 10000 + 6000 + 90000 = 106000 (10.6x)
-      expect(await contract.getMultiplierForBands(30)).to.equal(106000n);
+    it("Should calculate correct multiplier for 20 bands", async function () {
+      // 10000 + (20 * 200) = 14000 (1.4x)
+      expect(await contract.getMultiplierForBands(20)).to.equal(14000n);
     });
 
-    it("Should cap at MAX_MULTIPLIER (100x)", async function () {
-      // At some high band count, should cap at 1000000
-      expect(await contract.getMultiplierForBands(100)).to.equal(1000000n);
+    it("Should cap at MULTIPLIER_CAP (1.5x) at 25 bands", async function () {
+      // 10000 + (25 * 200) = 15000 (1.5x) - exactly at cap
+      expect(await contract.getMultiplierForBands(25)).to.equal(15000n);
+    });
+
+    it("Should stay at cap for bands above 25", async function () {
+      // Should cap at 15000 (1.5x)
+      expect(await contract.getMultiplierForBands(30)).to.equal(15000n);
+      expect(await contract.getMultiplierForBands(50)).to.equal(15000n);
     });
   });
 
   describe("Solo Game Flow", function () {
     it("Should start a game with valid bet", async function () {
-      const betAmount = ethers.parseEther("0.1");
+      const betAmount = ethers.parseEther("0.005");
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
       await expect(contract.connect(player).startSoloGame({ value: betAmount + vrfFee }))
@@ -94,33 +102,33 @@ describe("WatermelonSnapSolo", function () {
 
     it("Should reject bet above maximum", async function () {
       await expect(
-        contract.connect(player).startSoloGame({ value: ethers.parseEther("11") })
+        contract.connect(player).startSoloGame({ value: ethers.parseEther("0.02") })
       ).to.be.revertedWithCustomError(contract, "BetTooLarge");
     });
 
     it("Should handle VRF callback and activate game", async function () {
-      const betAmount = ethers.parseEther("0.1");
+      const betAmount = ethers.parseEther("0.005");
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
       await contract.connect(player).startSoloGame({ value: betAmount + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      // Simulate VRF callback with threshold of 50
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      // Simulate VRF callback with threshold of 25 (within 1-50 range)
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 25);
 
       const gameState = await contract.getSoloGameState(gameId);
       expect(gameState.state).to.equal(1n); // ACTIVE
     });
 
     it("Should add bands and update multiplier", async function () {
-      const betAmount = ethers.parseEther("0.1");
+      const betAmount = ethers.parseEther("0.005");
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
       await contract.connect(player).startSoloGame({ value: betAmount + vrfFee });
       const gameId = await contract.soloGameCounter();
 
       // Activate game with high threshold (won't explode)
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 99);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
 
       // Add 5 bands
       for (let i = 0; i < 5; i++) {
@@ -129,42 +137,58 @@ describe("WatermelonSnapSolo", function () {
 
       const gameState = await contract.getSoloGameState(gameId);
       expect(gameState.currentBands).to.equal(5n);
-      // 10000 + (5 * 200) + (25 * 100) = 10000 + 1000 + 2500 = 13500
-      expect(gameState.currentMultiplier).to.equal(13500n);
+      // 10000 + (5 * 200) = 11000 (1.1x)
+      expect(gameState.currentMultiplier).to.equal(11000n);
     });
 
     it("Should explode when reaching threshold", async function () {
-      const betAmount = ethers.parseEther("0.1");
+      const betAmount = ethers.parseEther("0.005");
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
       await contract.connect(player).startSoloGame({ value: betAmount + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      // Set threshold to 3
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 33);
+      // Set threshold to 5 (within 1-50 range)
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 5);
 
-      // Add bands until explosion (threshold is 33, so need to reach 33)
-      for (let i = 0; i < 32; i++) {
+      // Add bands until explosion (threshold is 5, so need to reach 5)
+      for (let i = 0; i < 4; i++) {
         await contract.connect(player).soloAddBand(gameId);
       }
 
       // This should trigger explosion
       await expect(contract.connect(player).soloAddBand(gameId))
         .to.emit(contract, "SoloExploded")
-        .withArgs(gameId, player.address, 33n, 33n);
+        .withArgs(gameId, player.address, 5n, 5n);
 
       const gameState = await contract.getSoloGameState(gameId);
       expect(gameState.state).to.equal(3n); // EXPLODED
     });
 
-    it("Should cash out successfully", async function () {
-      const betAmount = ethers.parseEther("0.1");
+    it("Should explode on first band if threshold is 1", async function () {
+      const betAmount = ethers.parseEther("0.005");
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
       await contract.connect(player).startSoloGame({ value: betAmount + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 99);
+      // Set threshold to 1 (minimum)
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 1);
+
+      // First band should explode
+      await expect(contract.connect(player).soloAddBand(gameId))
+        .to.emit(contract, "SoloExploded")
+        .withArgs(gameId, player.address, 1n, 1n);
+    });
+
+    it("Should cash out successfully", async function () {
+      const betAmount = ethers.parseEther("0.005");
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startSoloGame({ value: betAmount + vrfFee });
+      const gameId = await contract.soloGameCounter();
+
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
 
       // Add 10 bands
       for (let i = 0; i < 10; i++) {
@@ -185,13 +209,13 @@ describe("WatermelonSnapSolo", function () {
     });
 
     it("Should only allow game owner to add bands", async function () {
-      const betAmount = ethers.parseEther("0.1");
+      const betAmount = ethers.parseEther("0.005");
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
       await contract.connect(player).startSoloGame({ value: betAmount + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 99);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
 
       await expect(
         contract.connect(owner).soloAddBand(gameId)

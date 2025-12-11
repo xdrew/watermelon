@@ -1,7 +1,7 @@
 import { ethers } from "hardhat";
 import "dotenv/config";
 
-const CONTRACT_ADDRESS = "0x8b644AD5051D5a3De87eEde6BF8376Da36f674AF";
+const CONTRACT_ADDRESS = "0x49e9F30e555CcAec78F819bB4eE37dA93A5ff26b";
 
 async function main() {
   const [deployer] = await ethers.getSigners();
@@ -9,7 +9,7 @@ async function main() {
 
   const contract = await ethers.getContractAt("WatermelonSnapSolo", CONTRACT_ADDRESS);
 
-  const fundAmount = ethers.parseEther("1");
+  const fundAmount = ethers.parseEther("0.1"); // Max payout is 0.01 * 1.5 = 0.015, so 0.1 is plenty
   console.log(`Depositing ${ethers.formatEther(fundAmount)} MON to house...`);
 
   const tx = await contract.depositToHouse({ value: fundAmount });

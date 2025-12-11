@@ -19,13 +19,14 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     // ============ CONSTANTS ============
 
-    uint256 public constant SOLO_MIN_THRESHOLD = 30;
-    uint256 public constant SOLO_MAX_THRESHOLD = 100;
+    uint256 public constant SOLO_MIN_THRESHOLD = 1;
+    uint256 public constant SOLO_MAX_THRESHOLD = 50;
     uint256 public constant MIN_BET = 0.001 ether;
     uint256 public constant MAX_BET = 0.01 ether;
     uint256 public constant PROTOCOL_FEE_BPS = 500; // 5%
     uint256 public constant BASIS_POINTS = 10000;
-    uint256 public constant MAX_MULTIPLIER = 1000000; // 100x cap
+    uint256 public constant MULTIPLIER_PER_BAND_BP = 200; // 2% per band
+    uint256 public constant MULTIPLIER_CAP_BP = 15000; // 1.5x max
 
     // ============ STRUCTS ============
 
@@ -144,7 +145,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (msg.value > MAX_BET) revert BetTooLarge();
 
         // Calculate max potential payout and check house can cover
-        uint256 maxPayout = (msg.value * MAX_MULTIPLIER) / BASIS_POINTS;
+        uint256 maxPayout = (msg.value * MULTIPLIER_CAP_BP) / BASIS_POINTS;
         if (houseBalance < maxPayout) revert InsufficientHouseBalance();
 
         gameId = ++soloGameCounter;
@@ -264,28 +265,21 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     /// @notice Calculate multiplier for a given number of bands
     /// @param bands Number of bands placed
-    /// @return multiplier The multiplier in basis points
+    /// @return multiplier The multiplier in basis points (10000 = 1.0x)
     function getMultiplierForBands(uint256 bands) public pure returns (uint256 multiplier) {
-        if (bands == 0) return BASIS_POINTS; // 1.0x
-
-        // Formula: 1.0x + linear(0.02x per band) + quadratic(bands^2 / 100)
-        // This creates a curve that accelerates as bands increase
+        // Linear growth: 1.0x + 2% per band, capped at 1.5x
         // Examples:
-        //   10 bands -> 1.0 + 0.2 + 1.0 = 2.2x (22000)
-        //   20 bands -> 1.0 + 0.4 + 4.0 = 5.4x (54000)
-        //   30 bands -> 1.0 + 0.6 + 9.0 = 10.6x (106000)
-        //   50 bands -> 1.0 + 1.0 + 25.0 = 27.0x (270000)
-        //   70 bands -> 1.0 + 1.4 + 49.0 = 51.4x (514000)
-        //   100 bands -> 1.0 + 2.0 + 100.0 = 103.0x (capped at 100x)
+        //   0 bands  -> 1.00x (10000)
+        //   5 bands  -> 1.10x (11000)
+        //   10 bands -> 1.20x (12000)
+        //   15 bands -> 1.30x (13000)
+        //   20 bands -> 1.40x (14000)
+        //   25+ bands -> 1.50x (15000) CAP
 
-        uint256 linear = bands * 200; // +0.02x per band (200 basis points)
-        uint256 quadratic = (bands * bands * 100); // bands^2 * 0.01x (100 basis points)
+        multiplier = BASIS_POINTS + (bands * MULTIPLIER_PER_BAND_BP);
 
-        multiplier = BASIS_POINTS + linear + quadratic;
-
-        // Cap at max multiplier
-        if (multiplier > MAX_MULTIPLIER) {
-            multiplier = MAX_MULTIPLIER;
+        if (multiplier > MULTIPLIER_CAP_BP) {
+            multiplier = MULTIPLIER_CAP_BP;
         }
     }
 

@@ -49,8 +49,8 @@ contract MockEntropy is IEntropy {
     ) external {
         // Generate a random number that will produce the desired threshold
         // threshold = SOLO_MIN_THRESHOLD + (randomNumber % range)
-        // For testing, we encode the threshold directly
-        bytes32 randomNumber = bytes32(threshold - 30); // Subtract SOLO_MIN_THRESHOLD
+        // SOLO_MIN_THRESHOLD = 1, so randomNumber = threshold - 1
+        bytes32 randomNumber = bytes32(threshold - 1);
 
         IEntropyConsumer(callback).entropyCallback(
             sequenceNumber,
