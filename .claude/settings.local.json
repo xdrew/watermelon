@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.pyth.network)",
+      "WebFetch(domain:docs.monad.xyz)",
+      "Bash(npx hardhat:*)",
+      "Bash(npm pkg:*)",
+      "Bash(npm run deploy:testnet:*)",
+      "Bash(git rm:*)",
+      "Bash(git reset:*)",
+      "Bash(git add:*)",
+      "Bash(git branch:*)"
+    ]
+  }
+}

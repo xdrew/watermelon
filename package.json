@@ -1,0 +1,30 @@
+{
+  "name": "watermelon",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network monadTestnet",
+    "deploy:local": "hardhat run scripts/deploy.ts --network hardhat"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xdrew/watermelon.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/xdrew/watermelon/issues"
+  },
+  "homepage": "https://github.com/xdrew/watermelon#readme",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.27.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
+}
