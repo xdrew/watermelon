@@ -12,10 +12,9 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     IEntropy public immutable entropy;
     address public immutable entropyProvider;
     address public owner;
-    address public treasury;
 
     uint256 public soloGameCounter;
-    uint256 public houseBalance;
+    uint256 public balance; // Single pool for liquidity + fees
 
     // ============ CONSTANTS ============
 
@@ -25,8 +24,11 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 public constant MAX_BET = 0.01 ether;
     uint256 public constant PROTOCOL_FEE_BPS = 500; // 5%
     uint256 public constant BASIS_POINTS = 10000;
-    uint256 public constant MULTIPLIER_PER_BAND_BP = 200; // 2% per band
-    uint256 public constant MULTIPLIER_CAP_BP = 15000; // 1.5x max
+    uint256 public constant MULTIPLIER_RATE_BPS = 250; // 2.5% exponential growth per band
+    uint256 public constant GAS_PER_BAND = 50000; // Estimated gas per addBand call
+    uint256 public constant GAS_PER_CASHOUT = 80000; // Estimated gas for cashOut call
+
+    uint256 public gasReimbursementEnabled = 0; // 1 = enabled, 0 = disabled (default: off)
 
     // ============ STRUCTS ============
 
@@ -46,6 +48,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         SoloState state;
         uint64 vrfSequence;
         uint256 createdAt;
+        uint256 gasPrice; // Gas price at game start for reimbursement calculation
     }
 
     // ============ MAPPINGS ============
@@ -90,10 +93,12 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint256 threshold
     );
 
-    event HouseDeposit(address indexed depositor, uint256 amount);
-    event HouseWithdraw(address indexed recipient, uint256 amount);
-    event TreasuryUpdated(address indexed newTreasury);
+    event ProtocolFee(uint256 indexed gameId, uint256 amount);
+    event GasReimbursement(uint256 indexed gameId, uint256 amount);
+    event Deposit(address indexed depositor, uint256 amount);
+    event Withdraw(address indexed recipient, uint256 amount);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event GasReimbursementToggled(bool enabled);
 
     // ============ ERRORS ============
 
@@ -103,7 +108,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error GameNotActive();
     error GameNotRequestingVRF();
     error OnlyEntropy();
-    error InsufficientHouseBalance();
+    error InsufficientBalance();
     error TransferFailed();
     error OnlyOwner();
     error ZeroAddress();
@@ -121,18 +126,15 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     /// @notice Initialize the solo game contract
     /// @param _entropy Address of Pyth Entropy contract
     /// @param _entropyProvider Address of the entropy provider
-    /// @param _treasury Address to receive protocol fees
     constructor(
         address _entropy,
-        address _entropyProvider,
-        address _treasury
+        address _entropyProvider
     ) {
-        if (_entropy == address(0) || _entropyProvider == address(0) || _treasury == address(0)) {
+        if (_entropy == address(0) || _entropyProvider == address(0)) {
             revert ZeroAddress();
         }
         entropy = IEntropy(_entropy);
         entropyProvider = _entropyProvider;
-        treasury = _treasury;
         owner = msg.sender;
     }
 
@@ -141,18 +143,19 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     /// @notice Start a new solo game with a bet
     /// @return gameId The ID of the created game
     function startSoloGame() external payable returns (uint256 gameId) {
-        if (msg.value < MIN_BET) revert BetTooSmall();
-        if (msg.value > MAX_BET) revert BetTooLarge();
+        // Get VRF fee first to calculate actual bet
+        uint256 vrfFee = entropy.getFee(entropyProvider);
+        if (msg.value <= vrfFee) revert InsufficientFee();
 
-        // Calculate max potential payout and check house can cover
-        uint256 maxPayout = (msg.value * MULTIPLIER_CAP_BP) / BASIS_POINTS;
-        if (houseBalance < maxPayout) revert InsufficientHouseBalance();
+        uint256 betAmount = msg.value - vrfFee;
+        if (betAmount < MIN_BET) revert BetTooSmall();
+        if (betAmount > MAX_BET) revert BetTooLarge();
+
+        // Calculate max potential payout (at 49 bands ~3.35x) and check balance can cover
+        uint256 maxPayout = getMaxPayout(betAmount);
+        if (balance < maxPayout) revert InsufficientBalance();
 
         gameId = ++soloGameCounter;
-
-        // Request VRF for threshold
-        uint256 vrfFee = entropy.getFee(entropyProvider);
-        if (address(this).balance < vrfFee) revert InsufficientFee();
 
         bytes32 userRandomNumber = keccak256(
             abi.encodePacked(block.timestamp, block.prevrandao, gameId, msg.sender)
@@ -165,12 +168,13 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
         SoloGame storage game = soloGames[gameId];
         game.player = msg.sender;
-        game.betAmount = msg.value - vrfFee; // Subtract VRF fee from bet
+        game.betAmount = betAmount;
         game.currentBands = 0;
         game.currentMultiplier = BASIS_POINTS; // 1.0x
         game.state = SoloState.REQUESTING_VRF;
         game.vrfSequence = sequenceNumber;
         game.createdAt = block.timestamp;
+        game.gasPrice = tx.gasprice; // Record gas price for reimbursement
 
         vrfRequestToGame[sequenceNumber] = gameId;
         playerGames[msg.sender].push(gameId);
@@ -191,8 +195,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (game.currentBands >= game.snapThreshold) {
             // BOOM! Watermelon explodes
             game.state = SoloState.EXPLODED;
-            // House keeps the bet
-            houseBalance += game.betAmount;
+            // Pool keeps the bet
+            balance += game.betAmount;
 
             emit SoloExploded(gameId, msg.sender, game.currentBands, game.snapThreshold);
         } else {
@@ -214,26 +218,38 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint256 fee = (grossPayout * PROTOCOL_FEE_BPS) / BASIS_POINTS;
         uint256 netPayout = grossPayout - fee;
 
-        // Calculate house profit/loss
-        if (grossPayout > game.betAmount) {
-            // House pays the difference
-            uint256 housePays = grossPayout - game.betAmount;
-            houseBalance -= housePays;
-        } else {
-            // House profits (player cashed out early)
-            uint256 houseProfit = game.betAmount - grossPayout;
-            houseBalance += houseProfit;
+        // Calculate gas reimbursement if enabled
+        uint256 gasReimbursement = 0;
+        if (gasReimbursementEnabled == 1) {
+            // Reimburse for: all addBand calls + this cashOut call
+            uint256 totalGas = (game.currentBands * GAS_PER_BAND) + GAS_PER_CASHOUT;
+            gasReimbursement = totalGas * game.gasPrice;
+
+            // Cap reimbursement to available balance to prevent issues
+            if (gasReimbursement > balance) {
+                gasReimbursement = balance;
+            }
         }
 
-        // Send fee to treasury
-        (bool feeSuccess, ) = treasury.call{value: fee}("");
-        if (!feeSuccess) revert TransferFailed();
+        // Update pool balance
+        uint256 totalPayout = netPayout + gasReimbursement;
+        if (totalPayout > game.betAmount) {
+            balance -= (totalPayout - game.betAmount);
+        } else {
+            balance += (game.betAmount - totalPayout);
+        }
 
-        // Send payout to player
-        (bool payoutSuccess, ) = msg.sender.call{value: netPayout}("");
+        // Emit events for off-chain tracking
+        emit ProtocolFee(gameId, fee);
+        if (gasReimbursement > 0) {
+            emit GasReimbursement(gameId, gasReimbursement);
+        }
+
+        // Send payout to player (includes gas reimbursement)
+        (bool payoutSuccess, ) = msg.sender.call{value: totalPayout}("");
         if (!payoutSuccess) revert TransferFailed();
 
-        emit SoloCashOut(gameId, msg.sender, netPayout, game.currentBands, game.snapThreshold);
+        emit SoloCashOut(gameId, msg.sender, totalPayout, game.currentBands, game.snapThreshold);
     }
 
     /// @notice Pyth Entropy callback when VRF is fulfilled
@@ -263,24 +279,33 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     // ============ VIEW FUNCTIONS ============
 
-    /// @notice Calculate multiplier for a given number of bands
+    /// @notice Calculate multiplier for a given number of bands (2.5% exponential growth)
     /// @param bands Number of bands placed
     /// @return multiplier The multiplier in basis points (10000 = 1.0x)
     function getMultiplierForBands(uint256 bands) public pure returns (uint256 multiplier) {
-        // Linear growth: 1.0x + 2% per band, capped at 1.5x
+        // Exponential growth: 1.025^bands
         // Examples:
         //   0 bands  -> 1.00x (10000)
-        //   5 bands  -> 1.10x (11000)
-        //   10 bands -> 1.20x (12000)
-        //   15 bands -> 1.30x (13000)
-        //   20 bands -> 1.40x (14000)
-        //   25+ bands -> 1.50x (15000) CAP
+        //   5 bands  -> 1.13x (11314)
+        //   10 bands -> 1.28x (12801)
+        //   15 bands -> 1.45x (14483)
+        //   20 bands -> 1.64x (16386)
+        //   25 bands -> 1.85x (18539)
+        //   30 bands -> 2.10x (20976)
+        //   49 bands -> 3.35x (33533)
 
-        multiplier = BASIS_POINTS + (bands * MULTIPLIER_PER_BAND_BP);
-
-        if (multiplier > MULTIPLIER_CAP_BP) {
-            multiplier = MULTIPLIER_CAP_BP;
+        multiplier = BASIS_POINTS;
+        for (uint256 i = 0; i < bands; i++) {
+            multiplier = (multiplier * (BASIS_POINTS + MULTIPLIER_RATE_BPS)) / BASIS_POINTS;
         }
+    }
+
+    /// @notice Calculate max possible payout for a bet (at 49 bands)
+    /// @param betAmount The bet amount
+    /// @return maxPayout The maximum possible payout
+    function getMaxPayout(uint256 betAmount) public pure returns (uint256 maxPayout) {
+        uint256 maxMultiplier = getMultiplierForBands(SOLO_MAX_THRESHOLD - 1); // 49 bands
+        maxPayout = (betAmount * maxMultiplier) / BASIS_POINTS;
     }
 
     /// @notice Get full game state for frontend
@@ -323,39 +348,39 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     /// @notice Calculate potential payout for current game state
     /// @param gameId The game ID
-    function getPotentialPayout(uint256 gameId) external view returns (uint256 gross, uint256 fee, uint256 net) {
+    function getPotentialPayout(uint256 gameId) external view returns (uint256 gross, uint256 fee, uint256 net, uint256 gasReimbursement, uint256 total) {
         SoloGame storage game = soloGames[gameId];
         gross = (game.betAmount * game.currentMultiplier) / BASIS_POINTS;
         fee = (gross * PROTOCOL_FEE_BPS) / BASIS_POINTS;
         net = gross - fee;
+
+        if (gasReimbursementEnabled == 1) {
+            uint256 totalGas = (game.currentBands * GAS_PER_BAND) + GAS_PER_CASHOUT;
+            gasReimbursement = totalGas * game.gasPrice;
+        }
+        total = net + gasReimbursement;
     }
 
     // ============ ADMIN FUNCTIONS ============
 
-    /// @notice Deposit funds to house balance (for payouts)
-    function depositToHouse() external payable {
-        houseBalance += msg.value;
-        emit HouseDeposit(msg.sender, msg.value);
+    /// @notice Deposit funds to pool balance (for payouts)
+    function deposit() external payable {
+        balance += msg.value;
+        emit Deposit(msg.sender, msg.value);
     }
 
-    /// @notice Withdraw house profits
+    /// @notice Withdraw from pool
     /// @param amount Amount to withdraw
-    function withdrawFromHouse(uint256 amount) external onlyOwner {
-        if (amount > houseBalance) revert InsufficientHouseBalance();
-        houseBalance -= amount;
+    /// @param recipient Address to receive funds
+    function withdraw(uint256 amount, address recipient) external onlyOwner {
+        if (amount > balance) revert InsufficientBalance();
+        if (recipient == address(0)) revert ZeroAddress();
+        balance -= amount;
 
-        (bool success, ) = treasury.call{value: amount}("");
+        (bool success, ) = recipient.call{value: amount}("");
         if (!success) revert TransferFailed();
 
-        emit HouseWithdraw(treasury, amount);
-    }
-
-    /// @notice Update treasury address
-    /// @param newTreasury New treasury address
-    function setTreasury(address newTreasury) external onlyOwner {
-        if (newTreasury == address(0)) revert ZeroAddress();
-        treasury = newTreasury;
-        emit TreasuryUpdated(newTreasury);
+        emit Withdraw(recipient, amount);
     }
 
     /// @notice Transfer ownership
@@ -366,9 +391,16 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         owner = newOwner;
     }
 
-    /// @notice Receive ETH for house balance
+    /// @notice Toggle gas reimbursement on/off
+    /// @param enabled True to enable, false to disable
+    function setGasReimbursement(bool enabled) external onlyOwner {
+        gasReimbursementEnabled = enabled ? 1 : 0;
+        emit GasReimbursementToggled(enabled);
+    }
+
+    /// @notice Receive ETH for pool balance
     receive() external payable {
-        houseBalance += msg.value;
-        emit HouseDeposit(msg.sender, msg.value);
+        balance += msg.value;
+        emit Deposit(msg.sender, msg.value);
     }
 }

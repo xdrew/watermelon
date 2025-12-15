@@ -1,0 +1,47 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Run frontend dev server
+    dir: frontend
+    cmds:
+      - npm run dev
+
+  dev:
+    desc: Run frontend dev server
+    dir: frontend
+    cmds:
+      - npm run dev
+
+  build:
+    desc: Build frontend for production
+    dir: frontend
+    cmds:
+      - npm run build
+
+  start:
+    desc: Start frontend production server
+    dir: frontend
+    cmds:
+      - npm run start
+
+  install:
+    desc: Install all dependencies
+    cmds:
+      - npm install
+      - cd frontend && npm install
+
+  deploy:mock:
+    desc: Deploy mock contract to testnet
+    cmds:
+      - npx hardhat run scripts/deployMock.ts --network monadTestnet
+
+  compile:
+    desc: Compile smart contracts
+    cmds:
+      - npx hardhat compile
+
+  test:
+    desc: Run contract tests
+    cmds:
+      - npx hardhat test

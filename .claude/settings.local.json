@@ -13,7 +13,17 @@
       "Bash(git reset:*)",
       "Bash(git add:*)",
       "Bash(git branch:*)",
-      "Bash(npx ts-node:*)"
+      "Bash(npx ts-node:*)",
+      "Bash(npx create-next-app:*)",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm run build:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:testnet.monadvision.com)",
+      "Bash(cast tx:*)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "Bash(echo:*)"
     ]
   }
 }

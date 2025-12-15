@@ -8,17 +8,15 @@ describe("WatermelonSnapSolo", function () {
   let mockEntropy: any;
   let owner: SignerWithAddress;
   let player: SignerWithAddress;
-  let treasury: SignerWithAddress;
+  let recipient: SignerWithAddress;
 
   const ENTROPY_PROVIDER = "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344";
   const MIN_BET = ethers.parseEther("0.001");
   const MAX_BET = ethers.parseEther("0.01");
   const BASIS_POINTS = 10000n;
-  const MULTIPLIER_PER_BAND_BP = 200n;
-  const MULTIPLIER_CAP_BP = 15000n;
 
   beforeEach(async function () {
-    [owner, player, treasury] = await ethers.getSigners();
+    [owner, player, recipient] = await ethers.getSigners();
 
     // Deploy mock entropy contract
     const MockEntropy = await ethers.getContractFactory("MockEntropy");
@@ -29,54 +27,55 @@ describe("WatermelonSnapSolo", function () {
     const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
     contract = await WatermelonSnapSolo.deploy(
       await mockEntropy.getAddress(),
-      ENTROPY_PROVIDER,
-      treasury.address
+      ENTROPY_PROVIDER
     );
     await contract.waitForDeployment();
 
-    // Fund house balance
-    await contract.depositToHouse({ value: ethers.parseEther("100") });
+    // Fund pool balance
+    await contract.deposit({ value: ethers.parseEther("100") });
   });
 
   describe("Deployment", function () {
     it("Should set correct initial values", async function () {
       expect(await contract.owner()).to.equal(owner.address);
-      expect(await contract.treasury()).to.equal(treasury.address);
-      expect(await contract.houseBalance()).to.equal(ethers.parseEther("100"));
+      expect(await contract.balance()).to.equal(ethers.parseEther("100"));
     });
 
     it("Should reject zero addresses", async function () {
       const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
       await expect(
-        WatermelonSnapSolo.deploy(ethers.ZeroAddress, ENTROPY_PROVIDER, treasury.address)
+        WatermelonSnapSolo.deploy(ethers.ZeroAddress, ENTROPY_PROVIDER)
       ).to.be.revertedWithCustomError(contract, "ZeroAddress");
     });
   });
 
-  describe("Multiplier Calculation", function () {
+  describe("Multiplier Calculation (2.5% Exponential)", function () {
     it("Should return 1.0x for 0 bands", async function () {
       expect(await contract.getMultiplierForBands(0)).to.equal(10000n);
     });
 
     it("Should calculate correct multiplier for 10 bands", async function () {
-      // 10000 + (10 * 200) = 12000 (1.2x)
-      expect(await contract.getMultiplierForBands(10)).to.equal(12000n);
+      // 1.025^10 ≈ 1.2801 -> 12801 BP
+      const mult = await contract.getMultiplierForBands(10);
+      expect(mult).to.be.closeTo(12801n, 10n);
     });
 
     it("Should calculate correct multiplier for 20 bands", async function () {
-      // 10000 + (20 * 200) = 14000 (1.4x)
-      expect(await contract.getMultiplierForBands(20)).to.equal(14000n);
+      // 1.025^20 ≈ 1.6386 -> ~16374 BP (integer division)
+      const mult = await contract.getMultiplierForBands(20);
+      expect(mult).to.be.closeTo(16386n, 20n);
     });
 
-    it("Should cap at MULTIPLIER_CAP (1.5x) at 25 bands", async function () {
-      // 10000 + (25 * 200) = 15000 (1.5x) - exactly at cap
-      expect(await contract.getMultiplierForBands(25)).to.equal(15000n);
+    it("Should calculate correct multiplier for 30 bands", async function () {
+      // 1.025^30 ≈ 2.0976 -> ~20955 BP (integer division)
+      const mult = await contract.getMultiplierForBands(30);
+      expect(mult).to.be.closeTo(20976n, 30n);
     });
 
-    it("Should stay at cap for bands above 25", async function () {
-      // Should cap at 15000 (1.5x)
-      expect(await contract.getMultiplierForBands(30)).to.equal(15000n);
-      expect(await contract.getMultiplierForBands(50)).to.equal(15000n);
+    it("Should calculate correct multiplier for 49 bands", async function () {
+      // 1.025^49 ≈ 3.3533 -> 33533 BP
+      const mult = await contract.getMultiplierForBands(49);
+      expect(mult).to.be.closeTo(33533n, 50n);
     });
   });
 
@@ -95,8 +94,10 @@ describe("WatermelonSnapSolo", function () {
     });
 
     it("Should reject bet below minimum", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+      // Send VRF fee + tiny bet that's below MIN_BET
       await expect(
-        contract.connect(player).startSoloGame({ value: ethers.parseEther("0.0001") })
+        contract.connect(player).startSoloGame({ value: vrfFee + ethers.parseEther("0.0001") })
       ).to.be.revertedWithCustomError(contract, "BetTooSmall");
     });
 
@@ -137,8 +138,8 @@ describe("WatermelonSnapSolo", function () {
 
       const gameState = await contract.getSoloGameState(gameId);
       expect(gameState.currentBands).to.equal(5n);
-      // 10000 + (5 * 200) = 11000 (1.1x)
-      expect(gameState.currentMultiplier).to.equal(11000n);
+      // 1.025^5 ≈ 1.1314 -> 11314 BP
+      expect(gameState.currentMultiplier).to.be.closeTo(11314n, 10n);
     });
 
     it("Should explode when reaching threshold", async function () {
@@ -208,6 +209,24 @@ describe("WatermelonSnapSolo", function () {
       expect(playerBalanceAfter).to.be.gt(playerBalanceBefore - gasUsed);
     });
 
+    it("Should emit ProtocolFee event on cash out", async function () {
+      const betAmount = ethers.parseEther("0.005");
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startSoloGame({ value: betAmount + vrfFee });
+      const gameId = await contract.soloGameCounter();
+
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+
+      // Add 10 bands
+      for (let i = 0; i < 10; i++) {
+        await contract.connect(player).soloAddBand(gameId);
+      }
+
+      await expect(contract.connect(player).soloCashOut(gameId))
+        .to.emit(contract, "ProtocolFee");
+    });
+
     it("Should only allow game owner to add bands", async function () {
       const betAmount = ethers.parseEther("0.005");
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
@@ -223,48 +242,40 @@ describe("WatermelonSnapSolo", function () {
     });
   });
 
-  describe("House Management", function () {
-    it("Should allow deposits to house", async function () {
+  describe("Pool Management", function () {
+    it("Should allow deposits to pool", async function () {
       const depositAmount = ethers.parseEther("10");
-      const balanceBefore = await contract.houseBalance();
+      const balanceBefore = await contract.balance();
 
-      await expect(contract.depositToHouse({ value: depositAmount }))
-        .to.emit(contract, "HouseDeposit")
+      await expect(contract.deposit({ value: depositAmount }))
+        .to.emit(contract, "Deposit")
         .withArgs(owner.address, depositAmount);
 
-      expect(await contract.houseBalance()).to.equal(balanceBefore + depositAmount);
+      expect(await contract.balance()).to.equal(balanceBefore + depositAmount);
     });
 
-    it("Should allow owner to withdraw from house", async function () {
+    it("Should allow owner to withdraw from pool", async function () {
       const withdrawAmount = ethers.parseEther("10");
 
-      await expect(contract.withdrawFromHouse(withdrawAmount))
-        .to.emit(contract, "HouseWithdraw")
-        .withArgs(treasury.address, withdrawAmount);
+      await expect(contract.withdraw(withdrawAmount, recipient.address))
+        .to.emit(contract, "Withdraw")
+        .withArgs(recipient.address, withdrawAmount);
     });
 
     it("Should reject withdrawal exceeding balance", async function () {
       await expect(
-        contract.withdrawFromHouse(ethers.parseEther("1000"))
-      ).to.be.revertedWithCustomError(contract, "InsufficientHouseBalance");
+        contract.withdraw(ethers.parseEther("1000"), recipient.address)
+      ).to.be.revertedWithCustomError(contract, "InsufficientBalance");
     });
 
     it("Should reject non-owner withdrawal", async function () {
       await expect(
-        contract.connect(player).withdrawFromHouse(ethers.parseEther("1"))
+        contract.connect(player).withdraw(ethers.parseEther("1"), recipient.address)
       ).to.be.revertedWithCustomError(contract, "OnlyOwner");
     });
   });
 
   describe("Admin Functions", function () {
-    it("Should allow owner to update treasury", async function () {
-      await expect(contract.setTreasury(player.address))
-        .to.emit(contract, "TreasuryUpdated")
-        .withArgs(player.address);
-
-      expect(await contract.treasury()).to.equal(player.address);
-    });
-
     it("Should allow owner to transfer ownership", async function () {
       await expect(contract.transferOwnership(player.address))
         .to.emit(contract, "OwnershipTransferred")
