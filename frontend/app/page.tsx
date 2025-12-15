@@ -15,9 +15,7 @@ export default function Home() {
         <div className="flex justify-between items-center">
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
             <span className="text-3xl md:text-4xl">🍉</span>
-            <span className="bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent">
-              Watermelon Snap
-            </span>
+            <span>Watermelon Snap</span>
           </h1>
           <div className="flex items-center gap-4">
             {!isDemo && <ConnectWallet />}
@@ -28,26 +26,26 @@ export default function Home() {
       {/* Mode Toggle */}
       <div className="container mx-auto px-4 mb-4">
         <div className="flex justify-center">
-          <div className="inline-flex bg-gray-800/50 rounded-xl p-1">
+          <div className="inline-flex border border-gray-200 rounded-xl p-1 bg-white">
             <button
               onClick={() => setIsDemo(true)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 isDemo
-                  ? "bg-yellow-500 text-gray-900"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-black text-white"
+                  : "text-gray-400 hover:text-gray-600"
               }`}
             >
-              🎮 Demo Mode
+              Demo
             </button>
             <button
               onClick={() => setIsDemo(false)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 !isDemo
-                  ? "bg-green-500 text-white"
-                  : "text-gray-400 hover:text-white"
+                  ? "bg-black text-white"
+                  : "text-gray-400 hover:text-gray-600"
               }`}
             >
-              ⛓️ Live Mode
+              Live
             </button>
           </div>
         </div>
@@ -60,21 +58,21 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="container mx-auto px-4 py-8 mt-auto">
-        <div className="text-center text-gray-500 text-sm space-y-2">
+        <div className="text-center text-sm space-y-2">
           <p className="flex items-center justify-center gap-2 flex-wrap">
-            <span className="px-2 py-1 bg-purple-500/20 rounded text-purple-400 text-xs">Monad Testnet</span>
-            <span className="text-gray-600">|</span>
+            <span className="px-2 py-1 border border-gray-200 rounded text-gray-500 text-xs">Monad Testnet</span>
+            <span className="text-gray-300">|</span>
             <a
               href="https://testnet.monadexplorer.com/address/0xC9b820C2437eFEa3CDE50Df75C3d8D9E6c5DBDf7"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-gray-400 hover:text-gray-300 transition-colors font-mono"
+              className="text-gray-400 hover:text-gray-600 transition-colors font-mono"
             >
               0xC9b8...BDf7
             </a>
           </p>
-          <p className="text-gray-600">
-            Add rubber bands until you cash out or explode. House edge: 5%
+          <p className="text-gray-400">
+            Daily prize pool. Top 10 scores win.
           </p>
         </div>
       </footer>

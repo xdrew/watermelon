@@ -23,7 +23,8 @@
       "Bash(cast tx:*)",
       "Bash(curl:*)",
       "Bash(node:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(fold:*)"
     ]
   }
 }

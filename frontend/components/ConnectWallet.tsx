@@ -70,9 +70,9 @@ export function ConnectWallet() {
     return (
       <button
         disabled
-        className="px-6 py-3 bg-purple-600 rounded-lg font-semibold opacity-50"
+        className="px-4 py-2 bg-black text-white rounded-lg text-sm font-medium opacity-50"
       >
-        Connect Wallet
+        Connect
       </button>
     );
   }
@@ -82,27 +82,27 @@ export function ConnectWallet() {
       <button
         onClick={handleSwitchChain}
         disabled={isSwitching}
-        className="px-6 py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-yellow-800 rounded-lg font-semibold transition-colors"
+        className="px-4 py-2 border border-yellow-500 text-yellow-600 hover:bg-yellow-50 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
       >
-        {isSwitching ? "Switching..." : "Switch to Monad"}
+        {isSwitching ? "Switching..." : "Switch Network"}
       </button>
     );
   }
 
   if (isConnected && address) {
     return (
-      <div className="flex items-center gap-4">
-        <div className="text-sm">
-          <div className="text-gray-400">
+      <div className="flex items-center gap-3">
+        <div className="text-sm text-right">
+          <div className="text-gray-500 text-xs">
             {address.slice(0, 6)}...{address.slice(-4)}
           </div>
-          <div className="text-green-400 font-mono">
+          <div className="font-medium">
             {balance ? Number(formatEther(balance.value)).toFixed(4) : "0"} MON
           </div>
         </div>
         <button
           onClick={() => disconnect()}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm transition-colors"
+          className="px-3 py-1.5 border border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 rounded-lg text-xs transition-colors"
         >
           Disconnect
         </button>
@@ -114,41 +114,41 @@ export function ConnectWallet() {
     <>
       <button
         onClick={() => setShowWalletModal(true)}
-        className="px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition-colors"
+        className="px-4 py-2 bg-black text-white hover:bg-gray-800 rounded-lg text-sm font-medium transition-colors"
       >
-        Connect Wallet
+        Connect
       </button>
 
       {showWalletModal && (
         <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
           onClick={() => setShowWalletModal(false)}
         >
           <div
-            className="bg-gray-800 rounded-xl p-6 w-80 max-w-[90vw]"
+            className="bg-white rounded-2xl p-6 w-80 max-w-[90vw] shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 className="text-xl font-bold mb-4">Connect Wallet</h2>
+            <h2 className="text-lg font-bold mb-4">Connect Wallet</h2>
             <div className="space-y-2">
               {connectors.map((connector) => (
                 <button
                   key={connector.uid}
                   onClick={() => handleConnect(connector)}
                   disabled={isConnecting}
-                  className="w-full py-3 px-4 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-700 disabled:opacity-50 rounded-lg text-left transition-colors flex items-center gap-3"
+                  className="w-full py-3 px-4 border border-gray-200 hover:border-gray-300 hover:bg-gray-50 disabled:opacity-50 rounded-xl text-left transition-colors flex items-center gap-3"
                 >
                   {connector.icon ? (
                     <img src={connector.icon} alt="" className="w-6 h-6 rounded" />
                   ) : (
                     <span className="w-6 h-6 flex items-center justify-center">👛</span>
                   )}
-                  <span>{connector.name}</span>
+                  <span className="font-medium">{connector.name}</span>
                 </button>
               ))}
             </div>
             <button
               onClick={() => setShowWalletModal(false)}
-              className="w-full mt-4 py-2 text-gray-400 hover:text-white transition-colors"
+              className="w-full mt-4 py-2 text-gray-400 hover:text-gray-600 transition-colors text-sm"
             >
               Cancel
             </button>

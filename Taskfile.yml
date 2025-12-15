@@ -45,3 +45,27 @@ tasks:
     desc: Run contract tests
     cmds:
       - npx hardhat test
+
+  season:
+    desc: Show current season info
+    cmds:
+      - npx hardhat run scripts/seasonInfo.ts --network monadTestnet
+    env:
+      CONTRACT_ADDRESS: '{{.CONTRACT_ADDRESS}}'
+
+  distribute:
+    desc: Preview prize distribution for a season (dry run)
+    cmds:
+      - npx hardhat run scripts/distributePrizes.ts --network monadTestnet
+    env:
+      CONTRACT_ADDRESS: '{{.CONTRACT_ADDRESS}}'
+      SEASON: '{{.SEASON | default "1"}}'
+
+  distribute:execute:
+    desc: Execute prize distribution for a season
+    cmds:
+      - npx hardhat run scripts/distributePrizes.ts --network monadTestnet
+    env:
+      CONTRACT_ADDRESS: '{{.CONTRACT_ADDRESS}}'
+      SEASON: '{{.SEASON | default "1"}}'
+      EXECUTE: 'true'
