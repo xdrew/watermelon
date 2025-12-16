@@ -24,7 +24,8 @@
       "Bash(curl:*)",
       "Bash(node:*)",
       "Bash(echo:*)",
-      "Bash(fold:*)"
+      "Bash(fold:*)",
+      "Bash(npm view:*)"
     ]
   }
 }

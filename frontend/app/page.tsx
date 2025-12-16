@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { Game } from "@/components/Game";
 import { GameDemo } from "@/components/GameDemo";
+import { Leaderboard } from "@/components/Leaderboard";
 
 export default function Home() {
   const [isDemo, setIsDemo] = useState(true);
@@ -51,9 +52,16 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Game */}
+      {/* Game + Leaderboard */}
       <div className="container mx-auto px-4 py-8">
-        {isDemo ? <GameDemo /> : <Game />}
+        <div className="flex flex-col lg:flex-row gap-8 justify-center">
+          <div className="flex-1 max-w-md">
+            {isDemo ? <GameDemo /> : <Game />}
+          </div>
+          <div className="w-full lg:w-80">
+            <Leaderboard />
+          </div>
+        </div>
       </div>
 
       {/* Footer */}

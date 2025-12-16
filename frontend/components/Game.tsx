@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import {
-  useAccount,
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
@@ -21,7 +21,11 @@ import {
 } from "@/lib/contract";
 
 export function Game() {
-  const { address, isConnected } = useAccount();
+  const { authenticated, ready } = usePrivy();
+  const { wallets } = useWallets();
+  const activeWallet = wallets[0];
+  const address = activeWallet?.address as `0x${string}` | undefined;
+  const isConnected = authenticated && !!address;
   const chainId = useChainId();
   const [mounted, setMounted] = useState(false);
   const [gameId, setGameId] = useState<bigint | null>(null);
@@ -285,7 +289,7 @@ export function Game() {
     }
   }, [currentState, isWaitingForVRF]);
 
-  if (!mounted) {
+  if (!mounted || !ready) {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin" />

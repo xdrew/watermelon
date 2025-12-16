@@ -8,12 +8,14 @@
     "start": "next start"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.9.0",
+    "@privy-io/wagmi": "^2.1.1",
     "@tanstack/react-query": "^5.90.12",
-    "next": "16.0.8",
+    "next": "^15.5.9",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "viem": "^2.41.2",
-    "wagmi": "^3.1.0"
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
