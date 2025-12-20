@@ -10,7 +10,7 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
-import { CONTRACT_ADDRESS, SESSION_MANAGER_ADDRESS, MONAD_TESTNET } from "@/lib/contract";
+import { CONTRACT_ADDRESS, SESSION_MANAGER_ADDRESS, MONAD_TESTNET, GAS_LIMITS, GAS_PRICE } from "@/lib/contract";
 
 // Session Key Manager ABI (minimal)
 const SESSION_MANAGER_ABI = [
@@ -324,11 +324,16 @@ export function useSessionKey() {
         });
 
         // Send via session key - NO WALLET POPUP
+        // Use appropriate gas limit based on function
+        const gasLimit = functionName === "addBand" ? GAS_LIMITS.addBand : GAS_LIMITS.cashOut;
+
         const hash = await sessionWalletRef.current.sendTransaction({
           account: sessionWalletRef.current.account!,
           to: userAddress, // User's delegated EOA
           data: executeData,
           chain: MONAD_TESTNET,
+          gas: gasLimit + 50_000n, // Add buffer for session key overhead
+          ...GAS_PRICE,
         });
 
         return hash;

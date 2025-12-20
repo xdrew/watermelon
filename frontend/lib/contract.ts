@@ -298,6 +298,22 @@ export const MULTIPLIER_RATE_BPS = 250; // 2.5% per band
 export const LEADERBOARD_SIZE = 10;
 export const MAX_GAMES_PER_PAGE = 50;
 
+// Gas optimization settings for Monad
+// Monad charges based on gas limit, not actual usage - use tight limits
+export const GAS_LIMITS = {
+  startGame: 200_000n,      // VRF request + state init
+  addBand: 80_000n,         // State update + event
+  cashOut: 120_000n,        // State update + leaderboard check + event
+  cancelStaleGame: 100_000n, // State cleanup + refund
+} as const;
+
+// EIP-1559 gas price settings
+// Monad minimum base fee is 100 gwei
+export const GAS_PRICE = {
+  maxFeePerGas: 150n * 10n ** 9n,        // 150 gwei (safe upper bound)
+  maxPriorityFeePerGas: 1n * 10n ** 9n,  // 1 gwei (minimum tip)
+} as const;
+
 // Precomputed multiplier table (matches contract MULTIPLIER_TABLE)
 // MULTIPLIER_TABLE[n] = 1.025^n in basis points
 const MULTIPLIER_TABLE: bigint[] = (() => {

@@ -16,6 +16,8 @@ import {
   STALE_GAME_TIMEOUT,
   getDangerLevel,
   parseGameState,
+  GAS_LIMITS,
+  GAS_PRICE,
 } from "@/lib/contract";
 import { parseContractError, isUserRejection } from "@/lib/errors";
 import { useSessionKey } from "./useSessionKey";
@@ -250,6 +252,8 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         abi: CONTRACT_ABI,
         functionName: "startGame",
         value: totalValue,
+        gas: GAS_LIMITS.startGame,
+        ...GAS_PRICE,
       },
       {
         onSuccess: () => setStatus("Waiting for VRF..."),
@@ -287,6 +291,8 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         abi: CONTRACT_ABI,
         functionName: "addBand",
         args: [gameId],
+        gas: GAS_LIMITS.addBand,
+        ...GAS_PRICE,
       },
       { onError: handleError }
     );
@@ -320,6 +326,8 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         abi: CONTRACT_ABI,
         functionName: "cashOut",
         args: [gameId],
+        gas: GAS_LIMITS.cashOut,
+        ...GAS_PRICE,
       },
       { onError: handleError }
     );
@@ -334,6 +342,8 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         abi: CONTRACT_ABI,
         functionName: "cancelStaleGame",
         args: [gameId],
+        gas: GAS_LIMITS.cancelStaleGame,
+        ...GAS_PRICE,
       },
       {
         onSuccess: () => {
