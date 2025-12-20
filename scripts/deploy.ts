@@ -12,36 +12,37 @@ async function main() {
   // Get addresses from env or use defaults
   const entropyAddress = process.env.ENTROPY_ADDRESS || MONAD_TESTNET_ENTROPY;
   const entropyProvider = process.env.ENTROPY_PROVIDER || DEFAULT_ENTROPY_PROVIDER;
-  const treasury = process.env.TREASURY_ADDRESS || deployer.address;
 
   console.log("\nDeployment parameters:");
   console.log("- Entropy:", entropyAddress);
   console.log("- Entropy Provider:", entropyProvider);
-  console.log("- Treasury:", treasury);
 
   const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
-  const contract = await WatermelonSnapSolo.deploy(entropyAddress, entropyProvider, treasury);
+  const contract = await WatermelonSnapSolo.deploy(entropyAddress, entropyProvider);
 
   await contract.waitForDeployment();
   const contractAddress = await contract.getAddress();
 
   console.log("\nWatermelonSnapSolo deployed to:", contractAddress);
 
-  // Fund house balance with some initial liquidity
-  const initialHouseFunding = process.env.INITIAL_HOUSE_FUNDING || "0";
-  if (parseFloat(initialHouseFunding) > 0) {
-    console.log(`\nFunding house with ${initialHouseFunding} ETH...`);
-    const tx = await contract.depositToHouse({ value: ethers.parseEther(initialHouseFunding) });
+  // Fund prize pool with some initial liquidity (optional)
+  const initialFunding = process.env.INITIAL_PRIZE_POOL || "0";
+  if (parseFloat(initialFunding) > 0) {
+    console.log(`\nFunding prize pool with ${initialFunding} MON...`);
+    const tx = await deployer.sendTransaction({
+      to: contractAddress,
+      value: ethers.parseEther(initialFunding),
+    });
     await tx.wait();
-    console.log("House funded successfully");
+    console.log("Prize pool funded successfully");
   }
 
   console.log("\nDeployment complete!");
   console.log("Contract address:", contractAddress);
   console.log("\nNext steps:");
-  console.log("1. Fund the house balance: contract.depositToHouse({ value: ... })");
+  console.log("1. (Optional) Fund prize pool by sending MON to contract");
   console.log("2. Verify contract on block explorer");
-  console.log("3. Update frontend with contract address");
+  console.log("3. Update frontend CONTRACT_ADDRESS in lib/contract.ts");
 
   return contractAddress;
 }
