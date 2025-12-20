@@ -1,4 +1,6 @@
-export const CONTRACT_ADDRESS = "0xC9b820C2437eFEa3CDE50Df75C3d8D9E6c5DBDf7" as const;
+// Contract address from environment variable, with fallback for development
+const DEFAULT_CONTRACT_ADDRESS = "0xC9b820C2437eFEa3CDE50Df75C3d8D9E6c5DBDf7";
+export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS) as `0x${string}`;
 
 export const CONTRACT_ABI = [
   // View functions
