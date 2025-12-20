@@ -6,7 +6,7 @@ const DEFAULT_ENTROPY_PROVIDER = "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344";
 
 // Default entry fees
 const TESTNET_ENTRY_FEE = "0.01";  // 0.01 MON for testnet
-const MAINNET_ENTRY_FEE = "0.01";  // 0.01 MON for mainnet
+const MAINNET_ENTRY_FEE = "1";     // 1 MON for mainnet
 
 async function main() {
   const [deployer] = await ethers.getSigners();
