@@ -307,12 +307,29 @@ export const GAS_LIMITS = {
   cancelStaleGame: 100_000n, // State cleanup + refund
 } as const;
 
-// EIP-1559 gas price settings
+// EIP-1559 gas price settings (configurable per network)
 // Monad minimum base fee is 100 gwei
-export const GAS_PRICE = {
-  maxFeePerGas: 150n * 10n ** 9n,        // 150 gwei (safe upper bound)
-  maxPriorityFeePerGas: 1n * 10n ** 9n,  // 1 gwei (minimum tip)
+const GWEI = 10n ** 9n;
+
+// Testnet: higher gas prices (tokens are free)
+const TESTNET_GAS_PRICE = {
+  maxFeePerGas: BigInt(process.env.NEXT_PUBLIC_TESTNET_MAX_FEE_GWEI || "150") * GWEI,
+  maxPriorityFeePerGas: BigInt(process.env.NEXT_PUBLIC_TESTNET_PRIORITY_FEE_GWEI || "1") * GWEI,
 } as const;
+
+// Mainnet: optimized for lower costs
+const MAINNET_GAS_PRICE = {
+  maxFeePerGas: BigInt(process.env.NEXT_PUBLIC_MAINNET_MAX_FEE_GWEI || "120") * GWEI,
+  maxPriorityFeePerGas: BigInt(process.env.NEXT_PUBLIC_MAINNET_PRIORITY_FEE_GWEI || "1") * GWEI,
+} as const;
+
+// Select based on chain ID
+export function getGasPrice(chainId: number) {
+  return chainId === MONAD_TESTNET.id ? TESTNET_GAS_PRICE : MAINNET_GAS_PRICE;
+}
+
+// Default export for backwards compatibility (testnet)
+export const GAS_PRICE = TESTNET_GAS_PRICE;
 
 // Precomputed multiplier table (matches contract MULTIPLIER_TABLE)
 // MULTIPLIER_TABLE[n] = 1.025^n in basis points

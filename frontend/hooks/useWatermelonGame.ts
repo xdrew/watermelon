@@ -6,6 +6,7 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
   useWatchContractEvent,
+  useChainId,
 } from "wagmi";
 import { parseEther } from "viem";
 import {
@@ -17,7 +18,7 @@ import {
   getDangerLevel,
   parseGameState,
   GAS_LIMITS,
-  GAS_PRICE,
+  getGasPrice,
 } from "@/lib/contract";
 import { parseContractError, isUserRejection } from "@/lib/errors";
 import { useSessionKey } from "./useSessionKey";
@@ -49,6 +50,10 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   const [candidateGameId, setCandidateGameId] = useState<bigint | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWaitingForVRF, setIsWaitingForVRF] = useState(false);
+
+  // Get chain-specific gas prices
+  const chainId = useChainId();
+  const gasPrice = useMemo(() => getGasPrice(chainId), [chainId]);
 
   // Session key support for gasless gameplay (EIP-7702)
   const {
@@ -253,14 +258,14 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         functionName: "startGame",
         value: totalValue,
         gas: GAS_LIMITS.startGame,
-        ...GAS_PRICE,
+        ...gasPrice,
       },
       {
         onSuccess: () => setStatus("Waiting for VRF..."),
         onError: handleError,
       }
     );
-  }, [gameCost, writeContract, handleError]);
+  }, [gameCost, writeContract, handleError, gasPrice]);
 
   const addBand = useCallback(async () => {
     if (!gameId) return;
@@ -292,11 +297,11 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         functionName: "addBand",
         args: [gameId],
         gas: GAS_LIMITS.addBand,
-        ...GAS_PRICE,
+        ...gasPrice,
       },
       { onError: handleError }
     );
-  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState]);
+  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState, gasPrice]);
 
   const cashOut = useCallback(async () => {
     if (!gameId) return;
@@ -327,11 +332,11 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         functionName: "cashOut",
         args: [gameId],
         gas: GAS_LIMITS.cashOut,
-        ...GAS_PRICE,
+        ...gasPrice,
       },
       { onError: handleError }
     );
-  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState]);
+  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState, gasPrice]);
 
   const cancelGame = useCallback(() => {
     if (!gameId) return;
@@ -343,7 +348,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         functionName: "cancelStaleGame",
         args: [gameId],
         gas: GAS_LIMITS.cancelStaleGame,
-        ...GAS_PRICE,
+        ...gasPrice,
       },
       {
         onSuccess: () => {
@@ -353,7 +358,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         onError: handleError,
       }
     );
-  }, [gameId, writeContract, handleError]);
+  }, [gameId, writeContract, handleError, gasPrice]);
 
   const resetGame = useCallback(() => {
     setGameId(null);
