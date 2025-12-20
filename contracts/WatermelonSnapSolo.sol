@@ -163,6 +163,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error ReentrancyGuardReentrantCall();
     error GameNotStale();
     error GameAlreadyCancelled();
+    error ScoreOverflow();
 
     // ============ MODIFIERS ============
 
@@ -294,7 +295,9 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (game.state != SoloState.ACTIVE) revert GameNotActive();
 
         game.state = SoloState.SCORED;
-        game.score = uint32(calculateScore(game.currentBands, game.currentMultiplier));
+        uint256 calculatedScore = calculateScore(game.currentBands, game.currentMultiplier);
+        if (calculatedScore > type(uint32).max) revert ScoreOverflow();
+        game.score = uint32(calculatedScore);
 
         // Update best score if this is a new high
         uint256 season = uint256(game.season);
