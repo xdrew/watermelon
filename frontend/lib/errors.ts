@@ -62,7 +62,7 @@ export function parseContractError(error: Error | string): string {
     .replace(/reverted with reason string '([^']+)'/, "$1")
     .replace(/execution reverted: /, "");
 
-  return cleaned.length > 60 ? cleaned.slice(0, 57) + "..." : cleaned;
+  return cleaned.length > 100 ? cleaned.slice(0, 97) + "..." : cleaned;
 }
 
 export function isUserRejection(error: Error | string): boolean {
