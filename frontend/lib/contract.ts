@@ -59,6 +59,47 @@ export const CONTRACT_ABI = [
     type: "function",
   },
   {
+    inputs: [
+      { name: "player", type: "address" },
+      { name: "offset", type: "uint256" },
+      { name: "limit", type: "uint256" },
+    ],
+    name: "getPlayerGamesPage",
+    outputs: [
+      { name: "games", type: "uint256[]" },
+      { name: "total", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "season", type: "uint256" }],
+    name: "getLeaderboard",
+    outputs: [
+      {
+        components: [
+          { name: "player", type: "address" },
+          { name: "score", type: "uint256" },
+          { name: "gameId", type: "uint256" },
+        ],
+        name: "",
+        type: "tuple[]",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { name: "season", type: "uint256" },
+      { name: "player", type: "address" },
+    ],
+    name: "getPlayerRank",
+    outputs: [{ name: "rank", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
     inputs: [{ name: "season", type: "uint256" }, { name: "player", type: "address" }],
     name: "getPlayerSeasonBest",
     outputs: [
@@ -214,6 +255,17 @@ export const CONTRACT_ABI = [
       { indexed: false, name: "refundAmount", type: "uint256" },
     ],
     name: "SoloGameCancelled",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "season", type: "uint256" },
+      { indexed: true, name: "player", type: "address" },
+      { indexed: false, name: "score", type: "uint256" },
+      { indexed: false, name: "rank", type: "uint256" },
+    ],
+    name: "LeaderboardUpdated",
     type: "event",
   },
 ] as const;

@@ -38,6 +38,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 public constant MULTIPLIER_RATE_BPS = 250; // 2.5% exponential growth per band
     uint256 public constant SEASON_DURATION = 1 days;
     uint256 public constant STALE_GAME_TIMEOUT = 1 hours; // Time after which VRF game can be cancelled
+    uint256 public constant LEADERBOARD_SIZE = 10; // Top N players per season
+    uint256 public constant MAX_GAMES_PER_PAGE = 50; // Pagination limit
 
     // ============ STRUCTS ============
 
@@ -61,6 +63,12 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint256 createdAt;
     }
 
+    struct LeaderboardEntry {
+        address player;
+        uint256 score;
+        uint256 gameId;
+    }
+
     // ============ MAPPINGS ============
 
     mapping(uint256 => SoloGame) public soloGames;
@@ -74,6 +82,9 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     // Season tracking
     mapping(uint256 => uint256) public seasonPrizePool;
     mapping(uint256 => bool) public seasonFinalized;
+
+    // On-chain leaderboard: season => sorted array of top scores
+    mapping(uint256 => LeaderboardEntry[]) public seasonLeaderboard;
 
     // ============ EVENTS ============
 
@@ -127,6 +138,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     event Withdraw(address indexed recipient, uint256 amount);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event SoloGameCancelled(uint256 indexed gameId, address indexed player, uint256 refundAmount);
+    event LeaderboardUpdated(uint256 indexed season, address indexed player, uint256 score, uint256 rank);
 
     // ============ ERRORS ============
 
@@ -285,6 +297,9 @@ contract WatermelonSnapSolo is IEntropyConsumer {
             playerBestScore[season][msg.sender] = game.score;
             playerBestGameId[season][msg.sender] = gameId;
             emit NewHighScore(season, msg.sender, game.score, gameId);
+
+            // Update on-chain leaderboard
+            _updateLeaderboard(season, msg.sender, game.score, gameId);
         }
 
         emit SoloScored(gameId, season, msg.sender, game.score, game.currentBands, game.snapThreshold);
@@ -474,6 +489,55 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         return playerGames[player];
     }
 
+    /// @notice Get player's game history with pagination
+    /// @param player The player address
+    /// @param offset Starting index
+    /// @param limit Maximum number of games to return
+    function getPlayerGamesPage(
+        address player,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (uint256[] memory games, uint256 total) {
+        uint256[] storage allGames = playerGames[player];
+        total = allGames.length;
+
+        if (offset >= total) {
+            return (new uint256[](0), total);
+        }
+
+        // Clamp limit
+        if (limit > MAX_GAMES_PER_PAGE) {
+            limit = MAX_GAMES_PER_PAGE;
+        }
+
+        uint256 remaining = total - offset;
+        uint256 count = remaining < limit ? remaining : limit;
+
+        games = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            games[i] = allGames[offset + i];
+        }
+    }
+
+    /// @notice Get the on-chain leaderboard for a season
+    /// @param season The season number
+    function getLeaderboard(uint256 season) external view returns (LeaderboardEntry[] memory) {
+        return seasonLeaderboard[season];
+    }
+
+    /// @notice Get player's rank in a season (0 = not ranked)
+    /// @param season The season number
+    /// @param player The player address
+    function getPlayerRank(uint256 season, address player) external view returns (uint256 rank) {
+        LeaderboardEntry[] storage leaderboard = seasonLeaderboard[season];
+        for (uint256 i = 0; i < leaderboard.length; i++) {
+            if (leaderboard[i].player == player) {
+                return i + 1; // 1-indexed rank
+            }
+        }
+        return 0; // Not ranked
+    }
+
     /// @notice Get current VRF fee
     function getVRFFee() external view returns (uint256) {
         return entropy.getFee(entropyProvider);
@@ -494,6 +558,70 @@ contract WatermelonSnapSolo is IEntropyConsumer {
             currentSeason++;
             seasonStartTime = block.timestamp;
             emit SeasonStarted(currentSeason, block.timestamp);
+        }
+    }
+
+    /// @notice Update the on-chain leaderboard with a new score
+    /// @param season The season number
+    /// @param player The player address
+    /// @param score The new score
+    /// @param gameId The game ID
+    function _updateLeaderboard(
+        uint256 season,
+        address player,
+        uint256 score,
+        uint256 gameId
+    ) internal {
+        LeaderboardEntry[] storage leaderboard = seasonLeaderboard[season];
+
+        // Find if player already exists in leaderboard
+        int256 existingIndex = -1;
+        for (uint256 i = 0; i < leaderboard.length; i++) {
+            if (leaderboard[i].player == player) {
+                existingIndex = int256(i);
+                break;
+            }
+        }
+
+        // If player exists, remove their old entry first
+        if (existingIndex >= 0) {
+            // Shift entries left to remove
+            for (uint256 i = uint256(existingIndex); i < leaderboard.length - 1; i++) {
+                leaderboard[i] = leaderboard[i + 1];
+            }
+            leaderboard.pop();
+        }
+
+        // Find insertion position (sorted descending by score)
+        uint256 insertPos = leaderboard.length;
+        for (uint256 i = 0; i < leaderboard.length; i++) {
+            if (score > leaderboard[i].score) {
+                insertPos = i;
+                break;
+            }
+        }
+
+        // Only insert if within top N
+        if (insertPos < LEADERBOARD_SIZE) {
+            // Make room by shifting entries right
+            if (leaderboard.length < LEADERBOARD_SIZE) {
+                leaderboard.push(LeaderboardEntry(address(0), 0, 0));
+            }
+
+            // Shift entries right from insertPos
+            for (uint256 i = leaderboard.length - 1; i > insertPos; i--) {
+                leaderboard[i] = leaderboard[i - 1];
+            }
+
+            // Insert new entry
+            leaderboard[insertPos] = LeaderboardEntry(player, score, gameId);
+
+            // Trim to max size if needed
+            while (leaderboard.length > LEADERBOARD_SIZE) {
+                leaderboard.pop();
+            }
+
+            emit LeaderboardUpdated(season, player, score, insertPos + 1);
         }
     }
 
