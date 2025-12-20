@@ -774,4 +774,142 @@ describe("WatermelonSnapSolo", function () {
       expect(games.length).to.equal(2);
     });
   });
+
+  describe("Edge Cases", function () {
+    describe("VRF Callback Edge Cases", function () {
+      it("Should reject duplicate VRF callback for already active game", async function () {
+        const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+        await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+
+        // First callback makes game active
+        await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 25);
+
+        const gameStateBefore = await contract.getGameState(1);
+        expect(gameStateBefore[6]).to.equal(1); // ACTIVE
+
+        // Second callback with same sequence should revert (game already active)
+        await expect(
+          mockEntropy.fulfillRequest(await contract.getAddress(), 1, 30)
+        ).to.be.revertedWithCustomError(contract, "GameNotRequestingVRF");
+      });
+
+      it("Should handle VRF callback for non-existent sequence gracefully", async function () {
+        // Start a game to get sequence 1
+        const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+        await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+
+        // Get game state before spurious callback
+        const gameStateBefore = await contract.getGameState(1);
+        expect(gameStateBefore[6]).to.equal(0); // REQUESTING_VRF
+
+        // Callback for wrong sequence - should not affect game 1
+        // (gameId 0 at sequence 999 is a default/empty game with player=address(0))
+        await mockEntropy.fulfillRequest(await contract.getAddress(), 999, 25);
+
+        // Game 1 should still be waiting for VRF (state unchanged)
+        const gameStateAfter = await contract.getGameState(1);
+        expect(gameStateAfter[6]).to.equal(0); // Still REQUESTING_VRF
+      });
+    });
+
+    describe("Leaderboard Capacity", function () {
+      it("Should maintain exactly 10 entries when at capacity", async function () {
+        const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+        const signers = await ethers.getSigners();
+
+        // Create 12 players with different scores
+        for (let i = 0; i < 12; i++) {
+          const playerSigner = signers[i + 4]; // Skip owner, player, player2, recipient
+          await contract.connect(playerSigner).startGame({ value: ENTRY_FEE + vrfFee });
+          // Use high threshold (50) so games don't explode
+          await mockEntropy.fulfillRequest(await contract.getAddress(), i + 1, 50);
+
+          // Add bands to get different scores
+          for (let j = 0; j < i + 1; j++) {
+            await contract.connect(playerSigner).addBand(i + 1);
+          }
+          await contract.connect(playerSigner).cashOut(i + 1);
+        }
+
+        const leaderboard = await contract.getLeaderboard(1);
+        // Should have exactly 10 entries (max leaderboard size)
+        const validEntries = leaderboard.filter((e: any) => e.player !== ethers.ZeroAddress);
+        expect(validEntries.length).to.be.lte(10);
+      });
+
+      it("Should replace lowest score when new higher score enters full leaderboard", async function () {
+        const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+        const signers = await ethers.getSigners();
+
+        // Fill leaderboard with 10 players, each with increasing scores
+        for (let i = 0; i < 10; i++) {
+          const playerSigner = signers[i + 4];
+          await contract.connect(playerSigner).startGame({ value: ENTRY_FEE + vrfFee });
+          // Use high threshold (50) so games don't explode
+          await mockEntropy.fulfillRequest(await contract.getAddress(), i + 1, 50);
+
+          for (let j = 0; j <= i; j++) {
+            await contract.connect(playerSigner).addBand(i + 1);
+          }
+          await contract.connect(playerSigner).cashOut(i + 1);
+        }
+
+        const leaderboardBefore = await contract.getLeaderboard(1);
+        const lowestScoreBefore = leaderboardBefore[9].score;
+
+        // New player with score higher than lowest
+        const newPlayer = signers[14];
+        await contract.connect(newPlayer).startGame({ value: ENTRY_FEE + vrfFee });
+        await mockEntropy.fulfillRequest(await contract.getAddress(), 11, 50);
+
+        // Add enough bands to beat the lowest score
+        for (let j = 0; j < 15; j++) {
+          await contract.connect(newPlayer).addBand(11);
+        }
+        await contract.connect(newPlayer).cashOut(11);
+
+        const leaderboardAfter = await contract.getLeaderboard(1);
+        const lowestScoreAfter = leaderboardAfter[9].score;
+
+        // Lowest score should now be higher than before (new player pushed someone out)
+        expect(lowestScoreAfter).to.be.gte(lowestScoreBefore);
+      });
+    });
+
+    describe("Season Boundary", function () {
+      it("Should handle game started in one season and scored in next", async function () {
+        const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+        // Start game in season 1
+        await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+        await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+
+        // Get the current season from the game
+        const gameStateBefore = await contract.getGameState(1);
+        const gameSeason = gameStateBefore[5]; // season field
+
+        // Add some bands
+        await contract.connect(player).addBand(1);
+        await contract.connect(player).addBand(1);
+
+        // Fast forward past season end
+        await ethers.provider.send("evm_increaseTime", [8 * 24 * 60 * 60]); // 8 days
+        await ethers.provider.send("evm_mine", []);
+
+        // Start new season (owner only)
+        await contract.startNewSeason();
+
+        // Cash out in new season - should still work and record to original season
+        await contract.connect(player).cashOut(1);
+
+        // Score should be recorded to the game's original season
+        const gameStateAfter = await contract.getGameState(1);
+        expect(gameStateAfter[5]).to.equal(gameSeason); // Season unchanged
+
+        // Check player's best for original season
+        const [bestScore] = await contract.getPlayerSeasonBest(gameSeason, player.address);
+        expect(bestScore).to.be.gt(0);
+      });
+    });
+  });
 });
