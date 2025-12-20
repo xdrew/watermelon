@@ -131,6 +131,13 @@ export const CONTRACT_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  {
+    inputs: [{ name: "gameId", type: "uint256" }],
+    name: "cancelStaleGame",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
   // Events
   {
     anonymous: false,
@@ -199,6 +206,16 @@ export const CONTRACT_ABI = [
     name: "NewHighScore",
     type: "event",
   },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "gameId", type: "uint256" },
+      { indexed: true, name: "player", type: "address" },
+      { indexed: false, name: "refundAmount", type: "uint256" },
+    ],
+    name: "SoloGameCancelled",
+    type: "event",
+  },
 ] as const;
 
 export const MONAD_TESTNET = {
@@ -223,7 +240,10 @@ export enum GameState {
   ACTIVE = 1,
   SCORED = 2,
   EXPLODED = 3,
+  CANCELLED = 4,
 }
+
+export const STALE_GAME_TIMEOUT = 3600; // 1 hour in seconds
 
 export function formatMultiplier(basisPoints: bigint): string {
   return (Number(basisPoints) / 10000).toFixed(2) + "x";

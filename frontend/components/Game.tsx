@@ -18,6 +18,7 @@ import {
   formatMultiplier,
   ENTRY_FEE,
   formatTimeLeft,
+  STALE_GAME_TIMEOUT,
 } from "@/lib/contract";
 
 export function Game() {
@@ -242,6 +243,32 @@ export function Game() {
     );
   };
 
+  const cancelGame = () => {
+    if (!gameId) return;
+    setStatus("Cancelling stale game...");
+    writeContract(
+      {
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        functionName: "cancelStaleGame",
+        args: [gameId],
+      },
+      {
+        onSuccess: () => {
+          setStatus("Game cancelled, refund sent!");
+          setIsWaitingForVRF(false);
+        },
+        onError: (error) => {
+          if (error.message.includes("User rejected") || error.message.includes("denied")) {
+            setStatus("");
+          } else {
+            setStatus(`Error: ${error.message.slice(0, 50)}`);
+          }
+        },
+      }
+    );
+  };
+
   // Parse game state - updated for new structure
   const currentState = gameState ? Number(gameState[6]) : null;
   const currentBands = gameState ? Number(gameState[1]) : 0;
@@ -250,9 +277,12 @@ export function Game() {
   const finalScore = gameState ? gameState[4] : BigInt(0);
   const threshold = gameState ? Number(gameState[7]) : 0;
   const isGameActive = currentState === GameState.ACTIVE;
-  const isGameOver = currentState === GameState.SCORED || currentState === GameState.EXPLODED;
+  const isGameOver = currentState === GameState.SCORED || currentState === GameState.EXPLODED || currentState === GameState.CANCELLED;
   const isExploded = currentState === GameState.EXPLODED;
   const isScored = currentState === GameState.SCORED;
+  const isCancelled = currentState === GameState.CANCELLED;
+  const gameCreatedAt = gameState ? Number(gameState[8]) : 0;
+  const isStale = currentState === GameState.REQUESTING_VRF && gameCreatedAt > 0 && (Math.floor(Date.now() / 1000) - gameCreatedAt) > STALE_GAME_TIMEOUT;
 
   // Calculate danger level (0-100)
   const dangerLevel = Math.min(100, currentBands * 2);
@@ -372,9 +402,16 @@ export function Game() {
         )}
 
         {/* Threshold reveal */}
-        {isGameOver && threshold > 0 && (
+        {isGameOver && threshold > 0 && !isCancelled && (
           <div className={`text-center text-sm mb-6 py-2 rounded-lg ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
             Threshold was {threshold} bands
+          </div>
+        )}
+
+        {/* Cancelled game message */}
+        {isCancelled && (
+          <div className="text-center text-sm mb-6 py-2 rounded-lg bg-gray-50 text-gray-600">
+            Game cancelled - entry fee refunded
           </div>
         )}
 
@@ -386,21 +423,35 @@ export function Game() {
         )}
 
         {/* Controls */}
-        {isWaitingForVRF ? (
+        {isWaitingForVRF || currentState === GameState.REQUESTING_VRF ? (
           <div className="text-center py-4">
             <div className="text-2xl mb-2 animate-bounce">🎲</div>
             <p className="text-gray-500 text-sm">Generating threshold...</p>
             <p className="text-xs text-gray-400 mt-1">Pyth Entropy VRF</p>
-            <button
-              onClick={() => {
-                refetchGameState();
-                setStatus("Checking...");
-                setTimeout(() => setStatus(""), 1000);
-              }}
-              className="mt-4 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50 transition-colors"
-            >
-              Check Status
-            </button>
+            <div className="flex gap-2 justify-center mt-4">
+              <button
+                onClick={() => {
+                  refetchGameState();
+                  setStatus("Checking...");
+                  setTimeout(() => setStatus(""), 1000);
+                }}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50 transition-colors"
+              >
+                Check Status
+              </button>
+              {isStale && (
+                <button
+                  onClick={cancelGame}
+                  disabled={isPending || isConfirming}
+                  className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                >
+                  Cancel & Refund
+                </button>
+              )}
+            </div>
+            {isStale && (
+              <p className="text-xs text-red-500 mt-2">VRF timed out - you can cancel for a refund</p>
+            )}
           </div>
         ) : !gameId || isGameOver ? (
           <div className="space-y-4">
@@ -429,12 +480,6 @@ export function Game() {
                 </span>
               ) : isGameOver ? 'Play Again' : 'Start Game'}
             </button>
-          </div>
-        ) : currentState === GameState.REQUESTING_VRF ? (
-          <div className="text-center py-4">
-            <div className="text-2xl mb-2 animate-bounce">🎲</div>
-            <p className="text-gray-500 text-sm">Generating threshold...</p>
-            <p className="text-xs text-gray-400 mt-1">Pyth Entropy VRF</p>
           </div>
         ) : isGameActive ? (
           <div className="space-y-4">

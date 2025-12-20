@@ -19,6 +19,14 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 public protocolBalance;
     uint256 public seasonStartTime;
 
+    // Reentrancy guard
+    uint256 private constant NOT_ENTERED = 1;
+    uint256 private constant ENTERED = 2;
+    uint256 private _status;
+
+    // Precomputed multipliers for O(1) lookup (1.025^n in basis points)
+    uint256[51] private MULTIPLIER_TABLE;
+
     // ============ CONSTANTS ============
 
     uint256 public constant SOLO_MIN_THRESHOLD = 1;
@@ -29,6 +37,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 public constant BASIS_POINTS = 10000;
     uint256 public constant MULTIPLIER_RATE_BPS = 250; // 2.5% exponential growth per band
     uint256 public constant SEASON_DURATION = 1 days;
+    uint256 public constant STALE_GAME_TIMEOUT = 1 hours; // Time after which VRF game can be cancelled
 
     // ============ STRUCTS ============
 
@@ -36,7 +45,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         REQUESTING_VRF,  // Waiting for threshold
         ACTIVE,          // Player adding bands
         SCORED,          // Player cashed out with score
-        EXPLODED         // Watermelon exploded (0 score)
+        EXPLODED,        // Watermelon exploded (0 score)
+        CANCELLED        // Game cancelled due to stale VRF
     }
 
     struct SoloGame {
@@ -116,6 +126,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     event Deposit(address indexed depositor, uint256 amount);
     event Withdraw(address indexed recipient, uint256 amount);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event SoloGameCancelled(uint256 indexed gameId, address indexed player, uint256 refundAmount);
 
     // ============ ERRORS ============
 
@@ -132,12 +143,22 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error SeasonAlreadyFinalized();
     error SeasonNotOver();
     error InvalidWinners();
+    error ReentrancyGuardReentrantCall();
+    error GameNotStale();
+    error GameAlreadyCancelled();
 
     // ============ MODIFIERS ============
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert OnlyOwner();
         _;
+    }
+
+    modifier nonReentrant() {
+        if (_status == ENTERED) revert ReentrancyGuardReentrantCall();
+        _status = ENTERED;
+        _;
+        _status = NOT_ENTERED;
     }
 
     // ============ CONSTRUCTOR ============
@@ -155,6 +176,17 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         entropy = IEntropy(_entropy);
         entropyProvider = _entropyProvider;
         owner = msg.sender;
+
+        // Initialize reentrancy guard
+        _status = NOT_ENTERED;
+
+        // Precompute multiplier table for O(1) lookup
+        // MULTIPLIER_TABLE[n] = 1.025^n in basis points
+        uint256 multiplier = BASIS_POINTS;
+        for (uint256 i = 0; i <= SOLO_MAX_THRESHOLD; i++) {
+            MULTIPLIER_TABLE[i] = multiplier;
+            multiplier = (multiplier * (BASIS_POINTS + MULTIPLIER_RATE_BPS)) / BASIS_POINTS;
+        }
 
         // Start first season
         currentSeason = 1;
@@ -258,6 +290,36 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         emit SoloScored(gameId, season, msg.sender, game.score, game.currentBands, game.snapThreshold);
     }
 
+    /// @notice Cancel a stale game stuck in REQUESTING_VRF state and refund player
+    /// @param gameId The game ID to cancel
+    function cancelStaleGame(uint256 gameId) external nonReentrant {
+        SoloGame storage game = soloGames[gameId];
+        if (game.player != msg.sender) revert NotYourGame();
+        if (game.state != SoloState.REQUESTING_VRF) revert GameNotRequestingVRF();
+        if (block.timestamp < game.createdAt + STALE_GAME_TIMEOUT) revert GameNotStale();
+
+        game.state = SoloState.CANCELLED;
+
+        // Calculate refund (entry fee portion that went to prize pool)
+        uint256 refundAmount = (ENTRY_FEE * PRIZE_POOL_BPS) / BASIS_POINTS;
+
+        // Deduct from prize pool and season prize pool
+        if (prizePool >= refundAmount) {
+            prizePool -= refundAmount;
+            if (seasonPrizePool[game.season] >= refundAmount) {
+                seasonPrizePool[game.season] -= refundAmount;
+            }
+
+            // Refund to player
+            (bool success, ) = msg.sender.call{value: refundAmount}("");
+            if (!success) revert TransferFailed();
+        } else {
+            refundAmount = 0; // No refund if prize pool insufficient
+        }
+
+        emit SoloGameCancelled(gameId, msg.sender, refundAmount);
+    }
+
     /// @notice Pyth Entropy callback when VRF is fulfilled
     /// @param sequenceNumber The request sequence number
     /// @param randomNumber The generated random number
@@ -291,7 +353,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint256 season,
         address[] calldata winners,
         uint256[] calldata amounts
-    ) external onlyOwner {
+    ) external onlyOwner nonReentrant {
         if (seasonFinalized[season]) revert SeasonAlreadyFinalized();
         if (season == currentSeason && block.timestamp < seasonStartTime + SEASON_DURATION) {
             revert SeasonNotOver();
@@ -339,9 +401,14 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     /// @notice Calculate multiplier for a given number of bands (2.5% exponential growth)
     /// @param bands Number of bands placed
     /// @return multiplier The multiplier in basis points (10000 = 1.0x)
-    function getMultiplierForBands(uint256 bands) public pure returns (uint256 multiplier) {
-        multiplier = BASIS_POINTS;
-        for (uint256 i = 0; i < bands; i++) {
+    function getMultiplierForBands(uint256 bands) public view returns (uint256 multiplier) {
+        // O(1) lookup from precomputed table
+        if (bands <= SOLO_MAX_THRESHOLD) {
+            return MULTIPLIER_TABLE[bands];
+        }
+        // Fallback for bands > 50 (shouldn't happen in normal gameplay)
+        multiplier = MULTIPLIER_TABLE[SOLO_MAX_THRESHOLD];
+        for (uint256 i = SOLO_MAX_THRESHOLD; i < bands; i++) {
             multiplier = (multiplier * (BASIS_POINTS + MULTIPLIER_RATE_BPS)) / BASIS_POINTS;
         }
     }
@@ -442,7 +509,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     /// @notice Withdraw protocol fees
     /// @param amount Amount to withdraw
     /// @param recipient Address to receive funds
-    function withdrawProtocolFees(uint256 amount, address recipient) external onlyOwner {
+    function withdrawProtocolFees(uint256 amount, address recipient) external onlyOwner nonReentrant {
         if (amount > protocolBalance) revert InsufficientBalance();
         if (recipient == address(0)) revert ZeroAddress();
         protocolBalance -= amount;
