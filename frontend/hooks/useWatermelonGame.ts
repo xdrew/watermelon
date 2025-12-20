@@ -15,6 +15,7 @@ import {
   ENTRY_FEE,
   STALE_GAME_TIMEOUT,
   getDangerLevel,
+  parseGameState,
 } from "@/lib/contract";
 import { parseContractError, isUserRejection } from "@/lib/errors";
 
@@ -121,7 +122,13 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   // Step 2: Check if candidate game is active (REQUESTING_VRF or ACTIVE)
   useEffect(() => {
     if (candidateGameId && candidateGameState) {
-      const state = Number(candidateGameState[6]) as GameState;
+      const state = parseGameState(candidateGameState[6]);
+      if (state === null) {
+        // Invalid state from contract - reset
+        setGameId(null);
+        setIsWaitingForVRF(false);
+        return;
+      }
       if (state === GameState.REQUESTING_VRF || state === GameState.ACTIVE) {
         // Game is still in progress - use it
         setGameId(candidateGameId);
@@ -297,7 +304,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
 
   // Parse game state
   const gameState: GameStateData = useMemo(() => ({
-    currentState: rawGameState ? Number(rawGameState[6]) as GameState : null,
+    currentState: rawGameState ? parseGameState(rawGameState[6]) : null,
     currentBands: rawGameState ? Number(rawGameState[1]) : 0,
     currentMultiplier: rawGameState ? rawGameState[2] : BigInt(10000),
     potentialScore: rawGameState ? rawGameState[3] : BigInt(0),

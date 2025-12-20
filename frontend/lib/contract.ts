@@ -342,6 +342,14 @@ export enum GameState {
   CANCELLED = 4,
 }
 
+const VALID_GAME_STATES = new Set([0, 1, 2, 3, 4]);
+
+export function parseGameState(value: unknown): GameState | null {
+  const num = Number(value);
+  if (!VALID_GAME_STATES.has(num)) return null;
+  return num as GameState;
+}
+
 export function formatMultiplier(basisPoints: bigint): string {
   return (Number(basisPoints) / 10000).toFixed(2) + "x";
 }
