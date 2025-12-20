@@ -213,7 +213,7 @@ export function Game() {
               {isProcessing ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Processing...
+                  {isValidatingGame ? 'Loading...' : isPending ? 'Confirm in wallet...' : 'Processing...'}
                 </span>
               ) : isGameOver ? 'Play Again' : 'Start Game'}
             </button>
@@ -245,14 +245,24 @@ export function Game() {
                 disabled={isProcessing || gameState.currentBands === 0}
                 className="py-3 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
-                Secure
+                {isPending || isConfirming ? (
+                  <span className="flex items-center justify-center gap-1">
+                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    {isPending ? 'Confirm...' : 'Saving...'}
+                  </span>
+                ) : 'Secure'}
               </button>
               <button
                 onClick={addBand}
                 disabled={isProcessing}
                 className="py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
-                Add Band
+                {isPending || isConfirming ? (
+                  <span className="flex items-center justify-center gap-1">
+                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    {isPending ? 'Confirm...' : 'Adding...'}
+                  </span>
+                ) : 'Add Band'}
               </button>
             </div>
           </div>
