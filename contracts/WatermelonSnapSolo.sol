@@ -51,16 +51,21 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         CANCELLED        // Game cancelled due to stale VRF
     }
 
+    /// @dev Packed struct uses 2 storage slots instead of 9
+    /// Slot 0: player (20) + currentBands (1) + snapThreshold (1) + state (1) = 23 bytes
+    /// Slot 1: vrfSequence (8) + currentMultiplier (4) + score (4) + season (4) + createdAt (5) = 25 bytes
     struct SoloGame {
-        address player;
-        uint256 currentBands;
-        uint256 snapThreshold;
-        uint256 currentMultiplier; // In basis points (10000 = 1.0x)
-        uint256 score;
-        uint256 season;
-        SoloState state;
-        uint64 vrfSequence;
-        uint256 createdAt;
+        // Slot 0
+        address player;              // 20 bytes
+        uint8 currentBands;          // 1 byte (max 50)
+        uint8 snapThreshold;         // 1 byte (max 50)
+        SoloState state;             // 1 byte (enum)
+        // Slot 1
+        uint64 vrfSequence;          // 8 bytes
+        uint32 currentMultiplier;    // 4 bytes (max ~33530 basis points)
+        uint32 score;                // 4 bytes (max ~16430)
+        uint32 season;               // 4 bytes (enough for 136 years of daily seasons)
+        uint40 createdAt;            // 5 bytes (good until year 36812)
     }
 
     struct LeaderboardEntry {
@@ -247,11 +252,11 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         SoloGame storage game = soloGames[gameId];
         game.player = msg.sender;
         game.currentBands = 0;
-        game.currentMultiplier = BASIS_POINTS; // 1.0x
+        game.currentMultiplier = uint32(BASIS_POINTS); // 1.0x
         game.state = SoloState.REQUESTING_VRF;
         game.vrfSequence = sequenceNumber;
-        game.createdAt = block.timestamp;
-        game.season = currentSeason;
+        game.createdAt = uint40(block.timestamp);
+        game.season = uint32(currentSeason);
 
         vrfRequestToGame[sequenceNumber] = gameId;
         playerGames[msg.sender].push(gameId);
@@ -267,14 +272,14 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (game.state != SoloState.ACTIVE) revert GameNotActive();
 
         game.currentBands++;
-        game.currentMultiplier = getMultiplierForBands(game.currentBands);
+        game.currentMultiplier = uint32(getMultiplierForBands(game.currentBands));
 
         if (game.currentBands >= game.snapThreshold) {
             // BOOM! Watermelon explodes - score is 0
             game.state = SoloState.EXPLODED;
             game.score = 0;
 
-            emit SoloExploded(gameId, game.season, msg.sender, game.currentBands, game.snapThreshold);
+            emit SoloExploded(gameId, uint256(game.season), msg.sender, game.currentBands, game.snapThreshold);
         } else {
             uint256 potentialScore = calculateScore(game.currentBands, game.currentMultiplier);
             emit SoloBandAdded(gameId, game.currentBands, game.currentMultiplier, potentialScore);
@@ -289,20 +294,21 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (game.state != SoloState.ACTIVE) revert GameNotActive();
 
         game.state = SoloState.SCORED;
-        game.score = calculateScore(game.currentBands, game.currentMultiplier);
+        game.score = uint32(calculateScore(game.currentBands, game.currentMultiplier));
 
         // Update best score if this is a new high
-        uint256 season = game.season;
-        if (game.score > playerBestScore[season][msg.sender]) {
-            playerBestScore[season][msg.sender] = game.score;
+        uint256 season = uint256(game.season);
+        uint256 score = uint256(game.score);
+        if (score > playerBestScore[season][msg.sender]) {
+            playerBestScore[season][msg.sender] = score;
             playerBestGameId[season][msg.sender] = gameId;
-            emit NewHighScore(season, msg.sender, game.score, gameId);
+            emit NewHighScore(season, msg.sender, score, gameId);
 
             // Update on-chain leaderboard
-            _updateLeaderboard(season, msg.sender, game.score, gameId);
+            _updateLeaderboard(season, msg.sender, score, gameId);
         }
 
-        emit SoloScored(gameId, season, msg.sender, game.score, game.currentBands, game.snapThreshold);
+        emit SoloScored(gameId, season, msg.sender, score, game.currentBands, game.snapThreshold);
     }
 
     /// @notice Cancel a stale game stuck in REQUESTING_VRF state and refund player
@@ -352,7 +358,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
         // Calculate threshold in range [SOLO_MIN_THRESHOLD, SOLO_MAX_THRESHOLD]
         uint256 range = SOLO_MAX_THRESHOLD - SOLO_MIN_THRESHOLD + 1;
-        uint256 threshold = SOLO_MIN_THRESHOLD + (uint256(randomNumber) % range);
+        uint8 threshold = uint8(SOLO_MIN_THRESHOLD + (uint256(randomNumber) % range));
 
         game.snapThreshold = threshold;
         game.state = SoloState.ACTIVE;

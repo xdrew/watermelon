@@ -14,6 +14,7 @@ import {
   GameState,
   ENTRY_FEE,
   STALE_GAME_TIMEOUT,
+  getDangerLevel,
 } from "@/lib/contract";
 import { parseContractError, isUserRejection } from "@/lib/errors";
 
@@ -288,7 +289,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   const isStale = gameState.currentState === GameState.REQUESTING_VRF &&
                   gameState.createdAt > 0 &&
                   (Math.floor(Date.now() / 1000) - gameState.createdAt) > STALE_GAME_TIMEOUT;
-  const dangerLevel = Math.min(100, gameState.currentBands * 2);
+  const dangerLevel = getDangerLevel(gameState.currentBands);
 
   // Parse season info
   const season: SeasonData = useMemo(() => ({

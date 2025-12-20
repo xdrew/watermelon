@@ -282,10 +282,57 @@ export const MONAD_TESTNET = {
   },
 } as const;
 
-// Game constants
+// Game constants - must match contract values
 export const ENTRY_FEE = 0.01; // Fixed entry fee in MON
 export const BASIS_POINTS = 10000;
 export const SEASON_DURATION = 24 * 60 * 60; // 1 day in seconds
+export const STALE_GAME_TIMEOUT = 3600; // 1 hour in seconds
+export const SOLO_MIN_THRESHOLD = 1;
+export const SOLO_MAX_THRESHOLD = 50;
+export const MULTIPLIER_RATE_BPS = 250; // 2.5% per band
+export const LEADERBOARD_SIZE = 10;
+export const MAX_GAMES_PER_PAGE = 50;
+
+// Precomputed multiplier table (matches contract MULTIPLIER_TABLE)
+// MULTIPLIER_TABLE[n] = 1.025^n in basis points
+const MULTIPLIER_TABLE: bigint[] = (() => {
+  const table: bigint[] = [];
+  let multiplier = BigInt(BASIS_POINTS);
+  for (let i = 0; i <= SOLO_MAX_THRESHOLD; i++) {
+    table.push(multiplier);
+    multiplier = (multiplier * BigInt(BASIS_POINTS + MULTIPLIER_RATE_BPS)) / BigInt(BASIS_POINTS);
+  }
+  return table;
+})();
+
+// Client-side multiplier calculation (matches contract getMultiplierForBands)
+export function getMultiplierForBands(bands: number): bigint {
+  if (bands <= SOLO_MAX_THRESHOLD) {
+    return MULTIPLIER_TABLE[bands];
+  }
+  // Fallback for bands > 50
+  let multiplier = MULTIPLIER_TABLE[SOLO_MAX_THRESHOLD];
+  for (let i = SOLO_MAX_THRESHOLD; i < bands; i++) {
+    multiplier = (multiplier * BigInt(BASIS_POINTS + MULTIPLIER_RATE_BPS)) / BigInt(BASIS_POINTS);
+  }
+  return multiplier;
+}
+
+// Client-side score calculation (matches contract calculateScore)
+export function calculateScore(bands: number, multiplier: bigint): bigint {
+  return (BigInt(bands) * multiplier) / 100n;
+}
+
+// Calculate survival probability as percentage
+export function getSurvivalProbability(bands: number): number {
+  if (bands >= SOLO_MAX_THRESHOLD) return 0;
+  return Math.round(((SOLO_MAX_THRESHOLD - bands) / SOLO_MAX_THRESHOLD) * 100);
+}
+
+// Calculate danger level (0-100) based on bands placed
+export function getDangerLevel(bands: number): number {
+  return Math.min(100, Math.round((bands / SOLO_MAX_THRESHOLD) * 100));
+}
 
 export enum GameState {
   REQUESTING_VRF = 0,
@@ -294,8 +341,6 @@ export enum GameState {
   EXPLODED = 3,
   CANCELLED = 4,
 }
-
-export const STALE_GAME_TIMEOUT = 3600; // 1 hour in seconds
 
 export function formatMultiplier(basisPoints: bigint): string {
   return (Number(basisPoints) / 10000).toFixed(2) + "x";

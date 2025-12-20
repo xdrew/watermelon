@@ -10,6 +10,8 @@ import {
   formatMultiplier,
   ENTRY_FEE,
   formatTimeLeft,
+  getMultiplierForBands,
+  SOLO_MAX_THRESHOLD,
 } from "@/lib/contract";
 import { useWatermelonGame } from "@/hooks/useWatermelonGame";
 
@@ -260,7 +262,7 @@ export function Game() {
         </div>
         <div>
           <span className="text-gray-400">Max: </span>
-          <span className="font-medium text-black">3.35x</span>
+          <span className="font-medium text-black">{formatMultiplier(getMultiplierForBands(SOLO_MAX_THRESHOLD - 1))}</span>
         </div>
       </div>
     </div>
