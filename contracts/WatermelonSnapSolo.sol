@@ -42,6 +42,11 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 public constant STALE_GAME_TIMEOUT = 1 hours; // Time after which VRF game can be cancelled
     uint256 public constant LEADERBOARD_SIZE = 10; // Top N players per season
     uint256 public constant MAX_GAMES_PER_PAGE = 50; // Pagination limit
+    uint256 public constant CALLER_REWARD_BPS = 100; // 1% reward for triggering distribution
+
+    // Prize distribution shares in basis points (must sum to 10000)
+    // 1st: 40%, 2nd: 25%, 3rd: 15%, 4th: 8%, 5th: 5%, 6th-10th: 1.4% each
+    uint256[10] private PRIZE_SHARES = [4000, 2500, 1500, 800, 500, 140, 140, 140, 140, 140];
 
     // ============ STRUCTS ============
 
@@ -146,6 +151,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event SoloGameCancelled(uint256 indexed gameId, address indexed player, uint256 refundAmount);
     event LeaderboardUpdated(uint256 indexed season, address indexed player, uint256 score, uint256 rank);
+    event SeasonAutoFinalized(uint256 indexed season, address indexed triggeredBy, uint256 callerReward, uint256 totalDistributed);
 
     // ============ ERRORS ============
 
@@ -167,6 +173,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error GameNotStale();
     error GameAlreadyCancelled();
     error ScoreOverflow();
+    error NoPrizePool();
+    error NoWinners();
 
     // ============ MODIFIERS ============
 
@@ -377,6 +385,23 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         emit SoloGameReady(gameId, game.player);
     }
 
+    /// @notice Finalize a season and distribute prizes (anyone can call after season ends)
+    /// @dev Caller receives 1% reward for triggering distribution
+    /// @param season The season to finalize
+    function finalizeSeason(uint256 season) external nonReentrant {
+        // Can only finalize past seasons, or current season if time has elapsed
+        if (season == currentSeason && block.timestamp < seasonStartTime + SEASON_DURATION) {
+            revert SeasonNotOver();
+        }
+        if (seasonFinalized[season]) revert SeasonAlreadyFinalized();
+        if (seasonPrizePool[season] == 0) revert NoPrizePool();
+
+        LeaderboardEntry[] storage leaderboard = seasonLeaderboard[season];
+        if (leaderboard.length == 0) revert NoWinners();
+
+        _autoDistributePrizes(season, msg.sender);
+    }
+
     /// @notice Distribute prizes to winners (called by owner with verified data)
     /// @param season The season to distribute prizes for
     /// @param winners Array of winner addresses (in order: 1st, 2nd, 3rd, etc.)
@@ -570,8 +595,18 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     // ============ INTERNAL FUNCTIONS ============
 
     /// @notice Check if season has ended and start new one
+    /// @dev Auto-distributes prizes for the ended season if not yet finalized
     function _checkAndStartNewSeason() internal {
         if (block.timestamp >= seasonStartTime + SEASON_DURATION) {
+            uint256 endedSeason = currentSeason;
+
+            // Auto-distribute prizes if season has winners and prize pool
+            if (!seasonFinalized[endedSeason] &&
+                seasonPrizePool[endedSeason] > 0 &&
+                seasonLeaderboard[endedSeason].length > 0) {
+                _autoDistributePrizes(endedSeason, msg.sender);
+            }
+
             currentSeason++;
             seasonStartTime = block.timestamp;
             emit SeasonStarted(currentSeason, block.timestamp);
@@ -640,6 +675,63 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
             emit LeaderboardUpdated(season, player, score, insertPos + 1);
         }
+    }
+
+    /// @notice Auto-distribute prizes based on leaderboard
+    /// @param season The season to distribute
+    /// @param caller The address that triggered distribution (receives reward)
+    function _autoDistributePrizes(uint256 season, address caller) internal {
+        LeaderboardEntry[] storage leaderboard = seasonLeaderboard[season];
+        uint256 pool = seasonPrizePool[season];
+
+        // Calculate caller reward (1%)
+        uint256 callerReward = (pool * CALLER_REWARD_BPS) / BASIS_POINTS;
+        uint256 distributablePool = pool - callerReward;
+
+        seasonFinalized[season] = true;
+
+        uint256 totalDistributed = 0;
+        uint256 winnersCount = leaderboard.length;
+
+        // Distribute to each winner based on their rank
+        for (uint256 i = 0; i < winnersCount && i < LEADERBOARD_SIZE; i++) {
+            address winner = leaderboard[i].player;
+            if (winner == address(0)) continue;
+
+            // Calculate prize: (distributable pool * share) / 10000
+            // If fewer than 10 winners, remaining shares go to last winner
+            uint256 share;
+            if (i == winnersCount - 1 && winnersCount < LEADERBOARD_SIZE) {
+                // Last winner gets remaining shares
+                uint256 usedShares = 0;
+                for (uint256 j = 0; j < i; j++) {
+                    usedShares += PRIZE_SHARES[j];
+                }
+                share = BASIS_POINTS - usedShares;
+            } else {
+                share = PRIZE_SHARES[i];
+            }
+
+            uint256 prize = (distributablePool * share) / BASIS_POINTS;
+            if (prize > 0) {
+                totalDistributed += prize;
+                (bool success, ) = winner.call{value: prize}("");
+                if (!success) revert TransferFailed();
+                emit PrizeDistributed(season, winner, i + 1, prize);
+            }
+        }
+
+        // Pay caller reward
+        if (callerReward > 0 && caller != address(0)) {
+            totalDistributed += callerReward;
+            (bool success, ) = caller.call{value: callerReward}("");
+            if (!success) revert TransferFailed();
+        }
+
+        // Deduct from prize pool
+        prizePool -= totalDistributed;
+
+        emit SeasonAutoFinalized(season, caller, callerReward, totalDistributed);
     }
 
     // ============ ADMIN FUNCTIONS ============

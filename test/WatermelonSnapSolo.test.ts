@@ -533,6 +533,174 @@ describe("WatermelonSnapSolo", function () {
     });
   });
 
+  describe("Auto Prize Distribution", function () {
+    it("Should allow anyone to finalize season after it ends", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Play and score a game
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).addBand(1);
+      }
+      await contract.connect(player).cashOut(1);
+
+      const seasonPool = await contract.seasonPrizePool(1);
+
+      // Fast forward past season
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const playerBalanceBefore = await ethers.provider.getBalance(player.address);
+      const callerBalanceBefore = await ethers.provider.getBalance(player2.address);
+
+      // Anyone can call finalizeSeason
+      await expect(contract.connect(player2).finalizeSeason(1))
+        .to.emit(contract, "SeasonAutoFinalized");
+
+      // Player should receive prize (99% of pool as only winner)
+      const playerBalanceAfter = await ethers.provider.getBalance(player.address);
+      expect(playerBalanceAfter).to.be.gt(playerBalanceBefore);
+
+      // Caller gets 1% reward
+      const callerBalanceAfter = await ethers.provider.getBalance(player2.address);
+      const expectedReward = seasonPool / 100n;
+      // Account for gas costs
+      expect(callerBalanceAfter).to.be.closeTo(callerBalanceBefore + expectedReward, ethers.parseEther("0.01"));
+    });
+
+    it("Should auto-distribute when new season starts", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Play and score a game in season 1
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).addBand(1);
+      }
+      await contract.connect(player).cashOut(1);
+
+      const playerBalanceBefore = await ethers.provider.getBalance(player.address);
+
+      // Fast forward past season
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Start a new game (triggers auto-distribution)
+      await contract.connect(player2).startGame({ value: ENTRY_FEE + vrfFee });
+
+      // Season 1 should be finalized
+      expect(await contract.seasonFinalized(1)).to.equal(true);
+
+      // Player should have received prize
+      const playerBalanceAfter = await ethers.provider.getBalance(player.address);
+      expect(playerBalanceAfter).to.be.gt(playerBalanceBefore);
+    });
+
+    it("Should reject finalizeSeason before season ends", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      await contract.connect(player).cashOut(1);
+
+      await expect(
+        contract.connect(player2).finalizeSeason(1)
+      ).to.be.revertedWithCustomError(contract, "SeasonNotOver");
+    });
+
+    it("Should reject finalizeSeason with no prize pool", async function () {
+      // Fast forward past season 1
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Start season 2 (season 1 has pool from beforeEach)
+      await contract.startNewSeason();
+
+      // Fast forward past season 2
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      // Season 2 has no prize pool (no games, no sponsorship)
+      await expect(
+        contract.finalizeSeason(2)
+      ).to.be.revertedWithCustomError(contract, "NoPrizePool");
+    });
+
+    it("Should reject finalizeSeason with no winners", async function () {
+      // Season 1 has prize pool from beforeEach sponsorship but no games played
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await expect(
+        contract.finalizeSeason(1)
+      ).to.be.revertedWithCustomError(contract, "NoWinners");
+    });
+
+    it("Should reject double finalization", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      for (let i = 0; i < 3; i++) {
+        await contract.connect(player).addBand(1);
+      }
+      await contract.connect(player).cashOut(1);
+
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await contract.finalizeSeason(1);
+
+      await expect(
+        contract.finalizeSeason(1)
+      ).to.be.revertedWithCustomError(contract, "SeasonAlreadyFinalized");
+    });
+
+    it("Should distribute correct shares to multiple winners", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Player 1: 5 bands
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).addBand(1);
+      }
+      await contract.connect(player).cashOut(1);
+
+      // Player 2: 10 bands (higher score, will be #1)
+      await contract.connect(player2).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 15);
+      for (let i = 0; i < 10; i++) {
+        await contract.connect(player2).addBand(2);
+      }
+      await contract.connect(player2).cashOut(2);
+
+      const seasonPool = await contract.seasonPrizePool(1);
+
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const player1Before = await ethers.provider.getBalance(player.address);
+      const player2Before = await ethers.provider.getBalance(player2.address);
+
+      // Use recipient to trigger (so player2's balance isn't affected by gas)
+      await contract.connect(recipient).finalizeSeason(1);
+
+      const player1After = await ethers.provider.getBalance(player.address);
+      const player2After = await ethers.provider.getBalance(player2.address);
+
+      // With 2 winners: #1 gets 40%, #2 gets remaining 60% (since fewer than 10 winners)
+      // After 1% caller reward
+      const distributable = (seasonPool * 99n) / 100n;
+      const expectedP2Prize = (distributable * 4000n) / 10000n; // 40% for 1st
+      const expectedP1Prize = (distributable * 6000n) / 10000n; // Remaining 60% for 2nd
+
+      expect(player2After - player2Before).to.be.closeTo(expectedP2Prize, ethers.parseEther("0.001"));
+      expect(player1After - player1Before).to.be.closeTo(expectedP1Prize, ethers.parseEther("0.001"));
+    });
+  });
+
   describe("Stale Game Cancellation", function () {
     it("Should allow cancellation after timeout", async function () {
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
