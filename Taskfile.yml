@@ -1,29 +1,16 @@
 version: '3'
 
+vars:
+  TESTNET_RPC: https://testnet-rpc.monad.xyz
+  MAINNET_RPC: https://rpc.monad.xyz
+
 tasks:
   default:
-    desc: Run frontend dev server
-    dir: frontend
+    desc: Show available tasks
     cmds:
-      - npm run dev
+      - task --list
 
-  dev:
-    desc: Run frontend dev server
-    dir: frontend
-    cmds:
-      - npm run dev
-
-  build:
-    desc: Build frontend for production
-    dir: frontend
-    cmds:
-      - npm run build
-
-  start:
-    desc: Start frontend production server
-    dir: frontend
-    cmds:
-      - npm run start
+  # ============ SETUP ============
 
   install:
     desc: Install all dependencies
@@ -31,10 +18,67 @@ tasks:
       - npm install
       - cd frontend && npm install
 
-  deploy:mock:
-    desc: Deploy mock contract to testnet
+  setup:
+    desc: Interactive setup - create .env files
     cmds:
-      - npx hardhat run scripts/deployMock.ts --network monadTestnet
+      - |
+        echo "🍉 Watermelon Snap Setup"
+        echo "========================"
+        echo ""
+
+        # Root .env
+        if [ -f .env ]; then
+          echo "⚠️  .env already exists. Overwrite? (y/N)"
+          read -r OVERWRITE
+          if [ "$OVERWRITE" != "y" ] && [ "$OVERWRITE" != "Y" ]; then
+            echo "Skipping .env"
+          else
+            rm .env
+          fi
+        fi
+
+        if [ ! -f .env ]; then
+          echo "Enter your deployer private key (without 0x prefix):"
+          read -rs PRIVATE_KEY
+          echo ""
+
+          cat > .env << EOF
+        PRIVATE_KEY=$PRIVATE_KEY
+        MONAD_TESTNET_RPC={{.TESTNET_RPC}}
+        MONAD_RPC={{.MAINNET_RPC}}
+        ENTROPY_ADDRESS=0x36825bf3Fbdf5a29E2d5148bfe7Dcf7B5639e320
+        ENTROPY_PROVIDER=0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344
+        EOF
+          echo "✅ Created .env"
+        fi
+
+        # Frontend .env.local
+        echo ""
+        if [ -f frontend/.env.local ]; then
+          echo "⚠️  frontend/.env.local already exists. Overwrite? (y/N)"
+          read -r OVERWRITE
+          if [ "$OVERWRITE" != "y" ] && [ "$OVERWRITE" != "Y" ]; then
+            echo "Skipping frontend/.env.local"
+            exit 0
+          else
+            rm frontend/.env.local
+          fi
+        fi
+
+        echo "Enter your Privy App ID (from dashboard.privy.io):"
+        read -r PRIVY_APP_ID
+
+        cat > frontend/.env.local << EOF
+        NEXT_PUBLIC_CONTRACT_ADDRESS=
+        NEXT_PUBLIC_SESSION_MANAGER_ADDRESS=
+        NEXT_PUBLIC_PRIVY_APP_ID=$PRIVY_APP_ID
+        EOF
+        echo "✅ Created frontend/.env.local"
+        echo ""
+        echo "🎉 Setup complete! Run 'task deploy:testnet' to deploy."
+    silent: true
+
+  # ============ BUILD & TEST ============
 
   compile:
     desc: Compile smart contracts
@@ -42,30 +86,399 @@ tasks:
       - npx hardhat compile
 
   test:
-    desc: Run contract tests
+    desc: Run all tests
     cmds:
       - npx hardhat test
+
+  test:session:
+    desc: Run SessionKeyManager tests only
+    cmds:
+      - npx hardhat test test/SessionKeyManager.test.ts
+
+  build:
+    desc: Build frontend for production
+    dir: frontend
+    cmds:
+      - npm run build
+
+  # ============ TESTNET DEPLOYMENT ============
+
+  deploy:testnet:
+    desc: Deploy all contracts to Monad Testnet (interactive)
+    cmds:
+      - task: deploy:testnet:game
+      - task: deploy:testnet:session
+
+  deploy:testnet:game:
+    desc: Deploy WatermelonSnapSolo to testnet
+    cmds:
+      - |
+        echo "🍉 Deploying WatermelonSnapSolo to Monad Testnet..."
+        echo ""
+        npx hardhat run scripts/deploy.ts --network monadTestnet
+        echo ""
+        echo "📝 Enter the deployed contract address (or press Enter to skip):"
+        read -r CONTRACT_ADDR
+        if [ -n "$CONTRACT_ADDR" ]; then
+          if [ -f frontend/.env.local ]; then
+            if grep -q "NEXT_PUBLIC_CONTRACT_ADDRESS=" frontend/.env.local; then
+              sed -i "s|NEXT_PUBLIC_CONTRACT_ADDRESS=.*|NEXT_PUBLIC_CONTRACT_ADDRESS=$CONTRACT_ADDR|" frontend/.env.local
+            else
+              echo "NEXT_PUBLIC_CONTRACT_ADDRESS=$CONTRACT_ADDR" >> frontend/.env.local
+            fi
+          else
+            echo "NEXT_PUBLIC_CONTRACT_ADDRESS=$CONTRACT_ADDR" > frontend/.env.local
+          fi
+          echo "✅ Updated frontend/.env.local"
+        fi
+    silent: true
+
+  deploy:testnet:session:
+    desc: Deploy SessionKeyManager to testnet
+    cmds:
+      - |
+        echo "🔑 Deploying SessionKeyManager to Monad Testnet..."
+        echo ""
+        npx hardhat run scripts/deploySessionManager.ts --network monadTestnet
+        echo ""
+        echo "📝 Enter the deployed SessionKeyManager address (or press Enter to skip):"
+        read -r SESSION_ADDR
+        if [ -n "$SESSION_ADDR" ]; then
+          if [ -f frontend/.env.local ]; then
+            if grep -q "NEXT_PUBLIC_SESSION_MANAGER_ADDRESS=" frontend/.env.local; then
+              sed -i "s|NEXT_PUBLIC_SESSION_MANAGER_ADDRESS=.*|NEXT_PUBLIC_SESSION_MANAGER_ADDRESS=$SESSION_ADDR|" frontend/.env.local
+            else
+              echo "NEXT_PUBLIC_SESSION_MANAGER_ADDRESS=$SESSION_ADDR" >> frontend/.env.local
+            fi
+          else
+            echo "NEXT_PUBLIC_SESSION_MANAGER_ADDRESS=$SESSION_ADDR" > frontend/.env.local
+          fi
+          echo "✅ Updated frontend/.env.local"
+        fi
+    silent: true
+
+  fund:testnet:
+    desc: Fund prize pool on testnet (interactive)
+    cmds:
+      - |
+        echo "💰 Fund Prize Pool - Monad Testnet"
+        echo "==================================="
+        echo ""
+
+        # Try to get from env.local
+        CONTRACT_ADDR=""
+        if [ -f frontend/.env.local ]; then
+          CONTRACT_ADDR=$(grep "NEXT_PUBLIC_CONTRACT_ADDRESS=" frontend/.env.local 2>/dev/null | cut -d'=' -f2)
+        fi
+
+        if [ -n "$CONTRACT_ADDR" ] && [ "$CONTRACT_ADDR" != "" ]; then
+          echo "Found contract address: $CONTRACT_ADDR"
+          echo "Use this address? (Y/n)"
+          read -r USE_FOUND
+          if [ "$USE_FOUND" = "n" ] || [ "$USE_FOUND" = "N" ]; then
+            CONTRACT_ADDR=""
+          fi
+        fi
+
+        if [ -z "$CONTRACT_ADDR" ] || [ "$CONTRACT_ADDR" = "" ]; then
+          echo "Enter contract address:"
+          read -r CONTRACT_ADDR
+        fi
+
+        echo ""
+        echo "Enter amount to sponsor (in MON, default: 1):"
+        read -r AMOUNT
+        AMOUNT=${AMOUNT:-1}
+
+        echo ""
+        echo "Sponsoring $AMOUNT MON to $CONTRACT_ADDR..."
+        CONTRACT_ADDRESS=$CONTRACT_ADDR AMOUNT=$AMOUNT npx hardhat run scripts/sponsorPool.ts --network monadTestnet
+    silent: true
+
+  # ============ MAINNET DEPLOYMENT ============
+
+  deploy:mainnet:
+    desc: Deploy all contracts to Monad Mainnet (interactive)
+    cmds:
+      - task: deploy:mainnet:preflight
+      - task: deploy:mainnet:game
+      - task: deploy:mainnet:session
+
+  deploy:mainnet:preflight:
+    desc: Pre-mainnet checklist
+    cmds:
+      - |
+        echo "🚨 MAINNET DEPLOYMENT CHECKLIST"
+        echo "================================"
+        echo ""
+        echo "Please confirm:"
+        echo "  [ ] All tests passing"
+        echo "  [ ] Testnet deployment verified"
+        echo "  [ ] Contract audited (recommended)"
+        echo "  [ ] Using secure key management"
+        echo "  [ ] Mainnet Pyth Entropy addresses set in .env"
+        echo ""
+        echo "Continue with mainnet deployment? (type 'yes' to confirm)"
+        read -r CONFIRM
+        if [ "$CONFIRM" != "yes" ]; then
+          echo "Aborted."
+          exit 1
+        fi
+    silent: true
+
+  deploy:mainnet:game:
+    desc: Deploy WatermelonSnapSolo to mainnet
+    cmds:
+      - |
+        echo "🍉 Deploying WatermelonSnapSolo to Monad Mainnet..."
+        echo ""
+        npx hardhat run scripts/deploy.ts --network monad
+        echo ""
+        echo "Enter the deployed contract address:"
+        read -r CONTRACT_ADDR
+        if [ -n "$CONTRACT_ADDR" ]; then
+          echo "NEXT_PUBLIC_CONTRACT_ADDRESS=$CONTRACT_ADDR" > frontend/.env.production
+          echo "✅ Created frontend/.env.production"
+        fi
+    silent: true
+
+  deploy:mainnet:session:
+    desc: Deploy SessionKeyManager to mainnet
+    cmds:
+      - |
+        echo "🔑 Deploying SessionKeyManager to Monad Mainnet..."
+        npx hardhat run scripts/deploySessionManager.ts --network monad
+        echo ""
+        echo "Enter the deployed SessionKeyManager address:"
+        read -r SESSION_ADDR
+        if [ -n "$SESSION_ADDR" ]; then
+          echo "NEXT_PUBLIC_SESSION_MANAGER_ADDRESS=$SESSION_ADDR" >> frontend/.env.production
+          echo "✅ Updated frontend/.env.production"
+        fi
+    silent: true
+
+  fund:mainnet:
+    desc: Fund prize pool on mainnet (interactive)
+    cmds:
+      - |
+        echo "💰 Fund Prize Pool - Monad MAINNET"
+        echo "==================================="
+        echo "⚠️  This is MAINNET - real funds!"
+        echo ""
+        echo "Enter contract address:"
+        read -r CONTRACT_ADDR
+        echo ""
+        echo "Enter amount to sponsor (in MON):"
+        read -r AMOUNT
+        echo ""
+        echo "Confirm: Sponsor $AMOUNT MON to $CONTRACT_ADDR on MAINNET? (type 'yes')"
+        read -r CONFIRM
+        if [ "$CONFIRM" != "yes" ]; then
+          echo "Aborted."
+          exit 1
+        fi
+        CONTRACT_ADDRESS=$CONTRACT_ADDR AMOUNT=$AMOUNT npx hardhat run scripts/sponsorPool.ts --network monad
+    silent: true
+
+  # ============ INFO & ADMIN ============
+
+  info:
+    desc: Get contract info (interactive)
+    cmds:
+      - |
+        echo "📊 Contract Info"
+        echo "================"
+        echo ""
+
+        CONTRACT_ADDR=""
+        if [ -f frontend/.env.local ]; then
+          CONTRACT_ADDR=$(grep "NEXT_PUBLIC_CONTRACT_ADDRESS=" frontend/.env.local 2>/dev/null | cut -d'=' -f2)
+        fi
+
+        if [ -z "$CONTRACT_ADDR" ] || [ "$CONTRACT_ADDR" = "" ]; then
+          echo "Enter contract address:"
+          read -r CONTRACT_ADDR
+        else
+          echo "Contract: $CONTRACT_ADDR"
+        fi
+
+        echo ""
+        echo "Network: (1) Testnet  (2) Mainnet"
+        read -r NETWORK
+
+        if [ "$NETWORK" = "2" ]; then
+          RPC="{{.MAINNET_RPC}}"
+        else
+          RPC="{{.TESTNET_RPC}}"
+        fi
+
+        echo ""
+        echo "📅 Season Info:"
+        cast call $CONTRACT_ADDR "getSeasonInfo()(uint256,uint256,uint256,uint256,bool)" --rpc-url $RPC
+
+        echo ""
+        echo "💰 Prize Pool:"
+        POOL=$(cast call $CONTRACT_ADDR "prizePool()(uint256)" --rpc-url $RPC)
+        cast to-unit $POOL ether
+        echo "MON"
+
+        echo ""
+        echo "🎮 Total Games:"
+        cast call $CONTRACT_ADDR "soloGameCounter()(uint256)" --rpc-url $RPC
+    silent: true
 
   season:
     desc: Show current season info
     cmds:
-      - npx hardhat run scripts/seasonInfo.ts --network monadTestnet
-    env:
-      CONTRACT_ADDRESS: '{{.CONTRACT_ADDRESS}}'
+      - |
+        CONTRACT_ADDR=""
+        if [ -f frontend/.env.local ]; then
+          CONTRACT_ADDR=$(grep "NEXT_PUBLIC_CONTRACT_ADDRESS=" frontend/.env.local 2>/dev/null | cut -d'=' -f2)
+        fi
+        if [ -n "$CONTRACT_ADDR" ]; then
+          CONTRACT_ADDRESS=$CONTRACT_ADDR npx hardhat run scripts/seasonInfo.ts --network monadTestnet
+        else
+          echo "Set CONTRACT_ADDRESS or configure frontend/.env.local"
+        fi
+    silent: true
+
+  season:end:
+    desc: End current season (interactive)
+    cmds:
+      - |
+        echo "🏆 End Season"
+        echo "============="
+        echo ""
+        echo "Enter contract address:"
+        read -r CONTRACT_ADDR
+        echo ""
+        echo "Network: (1) Testnet  (2) Mainnet"
+        read -r NETWORK
+
+        if [ "$NETWORK" = "2" ]; then
+          RPC="{{.MAINNET_RPC}}"
+          echo "⚠️  This is MAINNET!"
+        else
+          RPC="{{.TESTNET_RPC}}"
+        fi
+
+        echo ""
+        echo "Confirm end season? (type 'yes')"
+        read -r CONFIRM
+        if [ "$CONFIRM" != "yes" ]; then
+          echo "Aborted."
+          exit 1
+        fi
+
+        source .env
+        cast send $CONTRACT_ADDR "endSeason()" --private-key $PRIVATE_KEY --rpc-url $RPC
+    silent: true
 
   distribute:
-    desc: Preview prize distribution for a season (dry run)
+    desc: Preview prize distribution
     cmds:
-      - npx hardhat run scripts/distributePrizes.ts --network monadTestnet
-    env:
-      CONTRACT_ADDRESS: '{{.CONTRACT_ADDRESS}}'
-      SEASON: '{{.SEASON | default "1"}}'
+      - |
+        CONTRACT_ADDR=""
+        if [ -f frontend/.env.local ]; then
+          CONTRACT_ADDR=$(grep "NEXT_PUBLIC_CONTRACT_ADDRESS=" frontend/.env.local 2>/dev/null | cut -d'=' -f2)
+        fi
+        if [ -z "$CONTRACT_ADDR" ]; then
+          echo "Enter contract address:"
+          read -r CONTRACT_ADDR
+        fi
+        CONTRACT_ADDRESS=$CONTRACT_ADDR npx hardhat run scripts/distributePrizes.ts --network monadTestnet
+    silent: true
 
-  distribute:execute:
-    desc: Execute prize distribution for a season
+  # ============ FRONTEND ============
+
+  dev:
+    desc: Start frontend dev server
+    dir: frontend
     cmds:
-      - npx hardhat run scripts/distributePrizes.ts --network monadTestnet
-    env:
-      CONTRACT_ADDRESS: '{{.CONTRACT_ADDRESS}}'
-      SEASON: '{{.SEASON | default "1"}}'
-      EXECUTE: 'true'
+      - npm run dev
+
+  start:
+    desc: Start frontend production server
+    dir: frontend
+    cmds:
+      - npm run start
+
+  deploy:frontend:
+    desc: Deploy frontend to Vercel
+    dir: frontend
+    cmds:
+      - |
+        echo "🚀 Deploy Frontend to Vercel"
+        echo "============================"
+        echo ""
+        echo "Prerequisites:"
+        echo "  - Vercel CLI: npm i -g vercel"
+        echo "  - Set env vars in Vercel dashboard"
+        echo ""
+        echo "Continue? (Y/n)"
+        read -r CONFIRM
+        if [ "$CONFIRM" = "n" ] || [ "$CONFIRM" = "N" ]; then
+          exit 0
+        fi
+        vercel --prod
+    silent: true
+
+  # ============ UTILITIES ============
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf cache artifacts typechain-types
+      - rm -rf frontend/.next frontend/node_modules/.cache
+      - echo "✅ Cleaned build artifacts"
+
+  verify:
+    desc: Verify contract on explorer (interactive)
+    cmds:
+      - |
+        echo "🔍 Verify Contract"
+        echo "=================="
+        echo ""
+        echo "Network: (1) Testnet  (2) Mainnet"
+        read -r NETWORK
+
+        if [ "$NETWORK" = "2" ]; then
+          NET="monad"
+        else
+          NET="monadTestnet"
+        fi
+
+        echo ""
+        echo "Enter contract address:"
+        read -r CONTRACT_ADDR
+        echo ""
+        echo "Enter Entropy address (press Enter for testnet default):"
+        read -r ENTROPY
+        ENTROPY=${ENTROPY:-0x36825bf3Fbdf5a29E2d5148bfe7Dcf7B5639e320}
+        echo ""
+        echo "Enter Entropy Provider (press Enter for testnet default):"
+        read -r PROVIDER
+        PROVIDER=${PROVIDER:-0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344}
+        echo ""
+        npx hardhat verify --network $NET $CONTRACT_ADDR $ENTROPY $PROVIDER
+    silent: true
+
+  # ============ QUICK START ============
+
+  quickstart:
+    desc: Full testnet deployment from scratch (interactive)
+    cmds:
+      - task: install
+      - task: setup
+      - task: compile
+      - task: test
+      - task: deploy:testnet
+      - task: fund:testnet
+      - |
+        echo ""
+        echo "🎉 Deployment complete!"
+        echo ""
+        echo "Next steps:"
+        echo "  task dev              - Start frontend dev server"
+        echo "  task deploy:frontend  - Deploy to Vercel"
+        echo "  task info             - View contract info"
