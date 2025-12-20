@@ -42,6 +42,7 @@ export interface CostData {
 
 export function useWatermelonGame(address: `0x${string}` | undefined) {
   const [gameId, setGameId] = useState<bigint | null>(null);
+  const [candidateGameId, setCandidateGameId] = useState<bigint | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWaitingForVRF, setIsWaitingForVRF] = useState(false);
 
@@ -87,6 +88,15 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     query: { enabled: !!address },
   });
 
+  // Check state of candidate game (last game in player's history)
+  const { data: candidateGameState } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "getGameState",
+    args: candidateGameId ? [candidateGameId] : undefined,
+    query: { enabled: !!candidateGameId },
+  });
+
   // Write contract
   const { writeContract, data: txHash, isPending } = useWriteContract();
 
@@ -95,19 +105,37 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     hash: txHash,
   });
 
-  // Check for existing active game on load
+  // Step 1: When playerGames changes, set candidate game ID to check
   useEffect(() => {
-    if (playerGames) {
-      if (playerGames.length > 0) {
-        const lastGameId = playerGames[playerGames.length - 1];
-        setGameId(lastGameId);
-      } else {
-        setGameId(null);
-        setIsWaitingForVRF(false);
-        setStatus("");
-      }
+    if (playerGames && playerGames.length > 0) {
+      const lastGameId = playerGames[playerGames.length - 1];
+      setCandidateGameId(lastGameId);
+    } else {
+      setCandidateGameId(null);
+      setGameId(null);
+      setIsWaitingForVRF(false);
+      setStatus("");
     }
   }, [playerGames]);
+
+  // Step 2: Check if candidate game is active (REQUESTING_VRF or ACTIVE)
+  useEffect(() => {
+    if (candidateGameId && candidateGameState) {
+      const state = Number(candidateGameState[6]) as GameState;
+      if (state === GameState.REQUESTING_VRF || state === GameState.ACTIVE) {
+        // Game is still in progress - use it
+        setGameId(candidateGameId);
+        if (state === GameState.REQUESTING_VRF) {
+          setIsWaitingForVRF(true);
+        }
+      } else {
+        // Game is finished (SCORED, EXPLODED, or CANCELLED) - don't auto-select
+        // Keep gameId as null so user can start a new game
+        setGameId(null);
+        setIsWaitingForVRF(false);
+      }
+    }
+  }, [candidateGameId, candidateGameState]);
 
   // Watch for game started event
   useWatchContractEvent({

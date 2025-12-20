@@ -421,6 +421,324 @@ describe("WatermelonSnapSolo", function () {
         contract.connect(player).distributePrizes(1, [player.address], [0n])
       ).to.be.revertedWithCustomError(contract, "OnlyOwner");
     });
+
+    it("Should reject mismatched winners and amounts arrays", async function () {
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await expect(
+        contract.distributePrizes(1, [player.address, player2.address], [ethers.parseEther("0.01")])
+      ).to.be.revertedWithCustomError(contract, "InvalidWinners");
+    });
+
+    it("Should reject empty winners array", async function () {
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await expect(
+        contract.distributePrizes(1, [], [])
+      ).to.be.revertedWithCustomError(contract, "InvalidWinners");
+    });
+
+    it("Should reject distribution exceeding pool balance", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Play one game
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const seasonPool = await contract.seasonPrizePool(1);
+
+      await expect(
+        contract.distributePrizes(1, [player.address], [seasonPool + ethers.parseEther("100")])
+      ).to.be.revertedWithCustomError(contract, "InsufficientBalance");
+    });
+
+    it("Should skip zero address winners gracefully", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const seasonPool = await contract.seasonPrizePool(1);
+      const prize = seasonPool / 2n;
+
+      // Include zero address - should be skipped
+      await expect(
+        contract.distributePrizes(1, [ethers.ZeroAddress, player.address], [prize, prize / 2n])
+      ).to.emit(contract, "SeasonFinalized");
+    });
+
+    it("Should allow partial distribution leaving funds in pool", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      }
+
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const seasonPool = await contract.seasonPrizePool(1);
+      const prizePoolBefore = await contract.prizePool();
+
+      // Only distribute 10% of pool
+      const partialPrize = seasonPool / 10n;
+      await contract.distributePrizes(1, [player.address], [partialPrize]);
+
+      const prizePoolAfter = await contract.prizePool();
+      expect(prizePoolBefore - prizePoolAfter).to.equal(partialPrize);
+    });
+
+    it("Should distribute to multiple winners correctly", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+      const [, , , , winner3] = await ethers.getSigners();
+
+      for (let i = 0; i < 10; i++) {
+        await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      }
+
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const seasonPool = await contract.seasonPrizePool(1);
+      const prize1 = seasonPool / 2n;
+      const prize2 = seasonPool / 4n;
+      const prize3 = seasonPool / 8n;
+
+      const balance1Before = await ethers.provider.getBalance(player.address);
+      const balance2Before = await ethers.provider.getBalance(player2.address);
+      const balance3Before = await ethers.provider.getBalance(winner3.address);
+
+      await contract.distributePrizes(
+        1,
+        [player.address, player2.address, winner3.address],
+        [prize1, prize2, prize3]
+      );
+
+      expect(await ethers.provider.getBalance(player.address)).to.equal(balance1Before + prize1);
+      expect(await ethers.provider.getBalance(player2.address)).to.equal(balance2Before + prize2);
+      expect(await ethers.provider.getBalance(winner3.address)).to.equal(balance3Before + prize3);
+    });
+  });
+
+  describe("Stale Game Cancellation", function () {
+    it("Should allow cancellation after timeout", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      const gameId = await contract.soloGameCounter();
+
+      // Fast forward past stale timeout (1 hour)
+      await ethers.provider.send("evm_increaseTime", [3600 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const balanceBefore = await ethers.provider.getBalance(player.address);
+
+      const tx = await contract.connect(player).cancelStaleGame(gameId);
+      const receipt = await tx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+
+      const balanceAfter = await ethers.provider.getBalance(player.address);
+      const refundAmount = (ENTRY_FEE * 9000n) / 10000n;
+
+      expect(balanceAfter).to.be.closeTo(balanceBefore + refundAmount - gasUsed, ethers.parseEther("0.0001"));
+
+      const gameState = await contract.getGameState(gameId);
+      expect(gameState.state).to.equal(4n); // CANCELLED
+    });
+
+    it("Should reject cancellation before timeout", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      const gameId = await contract.soloGameCounter();
+
+      await expect(
+        contract.connect(player).cancelStaleGame(gameId)
+      ).to.be.revertedWithCustomError(contract, "GameNotStale");
+    });
+
+    it("Should reject cancellation of active game", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      const gameId = await contract.soloGameCounter();
+
+      // Activate the game
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+
+      // Try to cancel (should fail even after timeout)
+      await ethers.provider.send("evm_increaseTime", [3600 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await expect(
+        contract.connect(player).cancelStaleGame(gameId)
+      ).to.be.revertedWithCustomError(contract, "GameNotRequestingVRF");
+    });
+
+    it("Should reject cancellation by non-owner of game", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      const gameId = await contract.soloGameCounter();
+
+      await ethers.provider.send("evm_increaseTime", [3600 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      await expect(
+        contract.connect(player2).cancelStaleGame(gameId)
+      ).to.be.revertedWithCustomError(contract, "NotYourGame");
+    });
+  });
+
+  describe("On-Chain Leaderboard", function () {
+    it("Should update leaderboard on high score", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      const gameId = await contract.soloGameCounter();
+
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+
+      // Add bands and cash out
+      for (let i = 0; i < 10; i++) {
+        await contract.connect(player).addBand(gameId);
+      }
+
+      await expect(contract.connect(player).cashOut(gameId))
+        .to.emit(contract, "LeaderboardUpdated");
+
+      const leaderboard = await contract.getLeaderboard(1);
+      expect(leaderboard.length).to.equal(1);
+      expect(leaderboard[0].player).to.equal(player.address);
+    });
+
+    it("Should maintain sorted order with multiple players", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Player 1: 5 bands
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).addBand(1);
+      }
+      await contract.connect(player).cashOut(1);
+
+      // Player 2: 15 bands (higher score)
+      await contract.connect(player2).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 50);
+      for (let i = 0; i < 15; i++) {
+        await contract.connect(player2).addBand(2);
+      }
+      await contract.connect(player2).cashOut(2);
+
+      const leaderboard = await contract.getLeaderboard(1);
+      expect(leaderboard.length).to.equal(2);
+      expect(leaderboard[0].player).to.equal(player2.address); // Higher score first
+      expect(leaderboard[1].player).to.equal(player.address);
+    });
+
+    it("Should return correct player rank", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Player 1
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).addBand(1);
+      }
+      await contract.connect(player).cashOut(1);
+
+      // Player 2 with higher score
+      await contract.connect(player2).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 50);
+      for (let i = 0; i < 15; i++) {
+        await contract.connect(player2).addBand(2);
+      }
+      await contract.connect(player2).cashOut(2);
+
+      expect(await contract.getPlayerRank(1, player2.address)).to.equal(1n);
+      expect(await contract.getPlayerRank(1, player.address)).to.equal(2n);
+      expect(await contract.getPlayerRank(1, owner.address)).to.equal(0n); // Not ranked
+    });
+
+    it("Should update player position when they beat their own score", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // First game: 5 bands
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).addBand(1);
+      }
+      await contract.connect(player).cashOut(1);
+
+      const score1 = (await contract.getLeaderboard(1))[0].score;
+
+      // Second game: 20 bands (higher score)
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 50);
+      for (let i = 0; i < 20; i++) {
+        await contract.connect(player).addBand(2);
+      }
+      await contract.connect(player).cashOut(2);
+
+      const leaderboard = await contract.getLeaderboard(1);
+      expect(leaderboard.length).to.equal(1); // Still one player
+      expect(leaderboard[0].score).to.be.gt(score1); // Score updated
+    });
+  });
+
+  describe("Pagination", function () {
+    it("Should return paginated player games", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Start 5 games
+      for (let i = 0; i < 5; i++) {
+        await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      }
+
+      // Get first page
+      const [page1, total1] = await contract.getPlayerGamesPage(player.address, 0, 2);
+      expect(page1.length).to.equal(2);
+      expect(total1).to.equal(5n);
+
+      // Get second page
+      const [page2, total2] = await contract.getPlayerGamesPage(player.address, 2, 2);
+      expect(page2.length).to.equal(2);
+      expect(total2).to.equal(5n);
+
+      // Get last page
+      const [page3, total3] = await contract.getPlayerGamesPage(player.address, 4, 2);
+      expect(page3.length).to.equal(1);
+      expect(total3).to.equal(5n);
+    });
+
+    it("Should return empty array for offset beyond total", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+
+      const [games, total] = await contract.getPlayerGamesPage(player.address, 100, 10);
+      expect(games.length).to.equal(0);
+      expect(total).to.equal(1n);
+    });
+
+    it("Should clamp limit to MAX_GAMES_PER_PAGE", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+
+      // Request 1000 games but only 1 exists
+      const [games, total] = await contract.getPlayerGamesPage(player.address, 0, 1000);
+      expect(games.length).to.equal(1);
+      expect(total).to.equal(1n);
+    });
   });
 
   describe("Admin Functions", function () {

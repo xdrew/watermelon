@@ -1,112 +1,48 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { createPublicClient, http, parseAbiItem } from "viem";
 import { useReadContract } from "wagmi";
-import { CONTRACT_ADDRESS, CONTRACT_ABI, MONAD_TESTNET } from "@/lib/contract";
+import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
 
 type LeaderboardEntry = {
-  address: string;
+  player: string;
   score: bigint;
   gameId: bigint;
 };
 
-const client = createPublicClient({
-  chain: {
-    id: MONAD_TESTNET.id,
-    name: MONAD_TESTNET.name,
-    nativeCurrency: MONAD_TESTNET.nativeCurrency,
-    rpcUrls: MONAD_TESTNET.rpcUrls,
-  },
-  transport: http(),
-});
-
-const BLOCK_RANGE = 99n;
-const BLOCKS_TO_SCAN = 10000n; // ~2-3 hours on Monad testnet
-const PARALLEL_REQUESTS = 10;
-
 export function Leaderboard() {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-
+  // Get current season
   const { data: seasonInfo } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getSeasonInfo",
   });
 
-  const season = seasonInfo ? Number(seasonInfo[0]) : 1;
+  const season = seasonInfo ? seasonInfo[0] : BigInt(1);
+  const seasonNumber = Number(season);
 
-  useEffect(() => {
-    async function fetchLeaderboard() {
-      setLoading(true);
-      try {
-        const currentBlock = await client.getBlockNumber();
-        const startBlock = currentBlock > BLOCKS_TO_SCAN ? currentBlock - BLOCKS_TO_SCAN : 0n;
+  // Fetch on-chain leaderboard directly
+  const { data: leaderboard, isLoading } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "getLeaderboard",
+    args: [season],
+    query: {
+      enabled: !!season,
+      refetchInterval: 30000, // Refresh every 30 seconds
+    },
+  });
 
-        // Build batch ranges
-        const ranges: { from: bigint; to: bigint }[] = [];
-        for (let from = startBlock; from <= currentBlock; from += BLOCK_RANGE + 1n) {
-          const to = from + BLOCK_RANGE > currentBlock ? currentBlock : from + BLOCK_RANGE;
-          ranges.push({ from, to });
-        }
+  const entries: LeaderboardEntry[] = (leaderboard as LeaderboardEntry[] | undefined) || [];
 
-        // Fetch in parallel batches
-        const playerScores = new Map<string, LeaderboardEntry>();
+  // Filter out empty entries (address(0))
+  const validEntries = entries.filter(
+    (entry) => entry.player !== "0x0000000000000000000000000000000000000000" && entry.score > 0n
+  );
 
-        for (let i = 0; i < ranges.length; i += PARALLEL_REQUESTS) {
-          const batch = ranges.slice(i, i + PARALLEL_REQUESTS);
-          const results = await Promise.allSettled(
-            batch.map(({ from, to }) =>
-              client.getLogs({
-                address: CONTRACT_ADDRESS,
-                event: parseAbiItem(
-                  "event NewHighScore(uint256 indexed season, address indexed player, uint256 score, uint256 gameId)"
-                ),
-                args: { season: BigInt(season) },
-                fromBlock: from,
-                toBlock: to,
-              })
-            )
-          );
-
-          for (const result of results) {
-            if (result.status === "fulfilled") {
-              for (const log of result.value) {
-                const player = log.args.player as string;
-                const score = log.args.score as bigint;
-                const gameId = log.args.gameId as bigint;
-
-                const existing = playerScores.get(player.toLowerCase());
-                if (!existing || score > existing.score) {
-                  playerScores.set(player.toLowerCase(), { address: player, score, gameId });
-                }
-              }
-            }
-          }
-        }
-
-        const sorted = Array.from(playerScores.values())
-          .sort((a, b) => (b.score > a.score ? 1 : -1))
-          .slice(0, 10);
-
-        setEntries(sorted);
-      } catch (err) {
-        console.error("Failed to fetch leaderboard:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    if (season) {
-      fetchLeaderboard();
-    }
-  }, [season]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="font-medium mb-4">Season {season} Leaderboard</h3>
+        <h3 className="font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
         </div>
@@ -114,10 +50,10 @@ export function Leaderboard() {
     );
   }
 
-  if (entries.length === 0) {
+  if (validEntries.length === 0) {
     return (
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="font-medium mb-4">Season {season} Leaderboard</h3>
+        <h3 className="font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
         <p className="text-gray-400 text-sm text-center py-4">No scores yet</p>
       </div>
     );
@@ -125,11 +61,11 @@ export function Leaderboard() {
 
   return (
     <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="font-medium mb-4">Season {season} Leaderboard</h3>
+      <h3 className="font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
       <div className="space-y-2">
-        {entries.map((entry, index) => (
+        {validEntries.map((entry, index) => (
           <div
-            key={entry.address}
+            key={`${entry.player}-${index}`}
             className={`flex items-center justify-between py-2 px-3 rounded-lg ${
               index === 0 ? "bg-yellow-50" : index < 3 ? "bg-gray-50" : ""
             }`}
@@ -141,7 +77,7 @@ export function Leaderboard() {
                 {index + 1}
               </span>
               <span className="font-mono text-sm">
-                {entry.address.slice(0, 6)}...{entry.address.slice(-4)}
+                {entry.player.slice(0, 6)}...{entry.player.slice(-4)}
               </span>
             </div>
             <span className="font-medium">{entry.score.toString()} pts</span>
