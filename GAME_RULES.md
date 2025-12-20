@@ -6,8 +6,8 @@ A "Press Your Luck" arcade game where you add rubber bands to a watermelon until
 
 ## How to Play
 
-1. **Start Game** - Pay entry fee (0.01 MON testnet / 1 MON mainnet)
-2. **VRF generates hidden threshold** - Random number 1-50 determines explosion point
+1. **Start Game** - Pay entry fee (0.01 MON testnet / 10 MON mainnet)
+2. **VRF generates hidden threshold** - Random number 1-15 determines explosion point
 3. **Add bands** - Each band increases your multiplier and potential score
 4. **Cash out** - Lock in your score before explosion
 5. **Explode** - If bands reach threshold, score = 0
@@ -16,33 +16,31 @@ A "Press Your Luck" arcade game where you add rubber bands to a watermelon until
 
 **Score Formula:** `score = bands × multiplier / 100`
 
-**Multiplier:** 2.5% exponential growth per band (`1.025^bands`)
+**Multiplier:** 15% exponential growth per band (`1.15^bands`)
 
 | Bands | Multiplier | Score |
 |-------|------------|-------|
-| 1 | 1.025x | 1 |
-| 5 | 1.13x | 56 |
-| 10 | 1.28x | 128 |
-| 15 | 1.45x | 217 |
-| 20 | 1.64x | 328 |
-| 25 | 1.85x | 463 |
-| 30 | 2.10x | 630 |
-| 40 | 2.69x | 1,974 |
-| 49 | 3.35x | 16,415 |
+| 1 | 1.15x | 115 |
+| 3 | 1.52x | 456 |
+| 5 | 2.01x | 1,006 |
+| 7 | 2.66x | 1,862 |
+| 10 | 4.05x | 4,046 |
+| 12 | 5.35x | 6,419 |
+| 14 | 7.08x | 9,906 |
 
 ## Survival Probability
 
-Threshold is uniformly distributed 1-50:
+Threshold is uniformly distributed 1-15:
 
 | Bands | Survival Chance |
 |-------|-----------------|
-| 1 | 98% (49/50) |
-| 5 | 90% (45/50) |
-| 10 | 80% (40/50) |
-| 20 | 60% (30/50) |
-| 30 | 40% (20/50) |
-| 40 | 20% (10/50) |
-| 49 | 2% (1/50) |
+| 1 | 93.3% (14/15) |
+| 3 | 80.0% (12/15) |
+| 5 | 66.7% (10/15) |
+| 7 | 53.3% (8/15) |
+| 10 | 33.3% (5/15) |
+| 12 | 20.0% (3/15) |
+| 14 | 6.7% (1/15) |
 
 ## Seasons & Prizes
 
@@ -57,23 +55,23 @@ Only your **best score** counts for the leaderboard. Playing multiple games lets
 
 ### High Score Attempt
 - Entry: 0.01 MON
-- Hidden threshold: 35
-- You add 30 bands safely (score = 630)
-- You push to 34 bands (score = 875)
+- Hidden threshold: 14
+- You add 10 bands safely (score = 4,046)
+- You push to 12 bands (score = 6,419)
 - You cash out
-- **Result:** 875 points on leaderboard
+- **Result:** 6,419 points on leaderboard
 
 ### Explosion
 - Entry: 0.01 MON
-- Hidden threshold: 12
-- You add 12 bands
+- Hidden threshold: 8
+- You add 8 bands
 - **BOOM!** Watermelon explodes
 - **Result:** 0 points, entry lost
 
 ### Worst Case
 - Hidden threshold: 1
 - First band triggers explosion
-- 2% chance of this happening
+- 6.7% chance of this happening
 
 ## Strategy
 
@@ -112,9 +110,10 @@ To win prizes, you need a top 10 score. Check the leaderboard and decide if you 
 
 | Metric | Value |
 |--------|-------|
-| Entry Fee | 0.01 MON (testnet) / 1 MON (mainnet) |
+| Entry Fee | 0.01 MON (testnet) / 10 MON (mainnet) |
 | Prize Pool | 90% of all entry fees |
 | Protocol Fee | 10% of entry fees |
-| Max Score | ~16,415 (49 bands) |
+| Max Score | ~9,906 (14 bands) |
+| Max Bands | 14 (threshold 1-15) |
 | Season Length | 24 hours |
 | Leaderboard Size | Top 10 |

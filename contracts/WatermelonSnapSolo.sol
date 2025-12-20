@@ -25,19 +25,19 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 private constant ENTERED = 2;
     uint256 private _status;
 
-    // Precomputed multipliers for O(1) lookup (1.025^n in basis points)
-    uint256[51] private MULTIPLIER_TABLE;
+    // Precomputed multipliers for O(1) lookup (1.15^n in basis points)
+    uint256[16] private MULTIPLIER_TABLE;
 
     // ============ CONSTANTS ============
 
     uint256 public constant SOLO_MIN_THRESHOLD = 1;
-    uint256 public constant SOLO_MAX_THRESHOLD = 50;
+    uint256 public constant SOLO_MAX_THRESHOLD = 15;
     uint256 public constant MIN_ENTRY_FEE = 0.001 ether;
-    uint256 public constant MAX_ENTRY_FEE = 1 ether;
+    uint256 public constant MAX_ENTRY_FEE = 10 ether;
     uint256 public constant PRIZE_POOL_BPS = 9000; // 90% to prize pool
     uint256 public constant PROTOCOL_FEE_BPS = 1000; // 10% protocol fee
     uint256 public constant BASIS_POINTS = 10000;
-    uint256 public constant MULTIPLIER_RATE_BPS = 250; // 2.5% exponential growth per band
+    uint256 public constant MULTIPLIER_RATE_BPS = 1500; // 15% exponential growth per band
     uint256 public constant SEASON_DURATION = 1 days;
     uint256 public constant STALE_GAME_TIMEOUT = 1 hours; // Time after which VRF game can be cancelled
     uint256 public constant LEADERBOARD_SIZE = 10; // Top N players per season
@@ -59,8 +59,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     struct SoloGame {
         // Slot 0
         address player;              // 20 bytes
-        uint8 currentBands;          // 1 byte (max 50)
-        uint8 snapThreshold;         // 1 byte (max 50)
+        uint8 currentBands;          // 1 byte (max 15)
+        uint8 snapThreshold;         // 1 byte (max 15)
         SoloState state;             // 1 byte (enum)
         // Slot 1
         uint64 vrfSequence;          // 8 bytes
@@ -207,7 +207,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         _status = NOT_ENTERED;
 
         // Precompute multiplier table for O(1) lookup
-        // MULTIPLIER_TABLE[n] = 1.025^n in basis points
+        // MULTIPLIER_TABLE[n] = 1.15^n in basis points
         uint256 multiplier = BASIS_POINTS;
         for (uint256 i = 0; i <= SOLO_MAX_THRESHOLD; i++) {
             MULTIPLIER_TABLE[i] = multiplier;
@@ -430,7 +430,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         score = (bands * multiplier) / 100;
     }
 
-    /// @notice Calculate multiplier for a given number of bands (2.5% exponential growth)
+    /// @notice Calculate multiplier for a given number of bands (15% exponential growth)
     /// @param bands Number of bands placed
     /// @return multiplier The multiplier in basis points (10000 = 1.0x)
     function getMultiplierForBands(uint256 bands) public view returns (uint256 multiplier) {
@@ -438,7 +438,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (bands <= SOLO_MAX_THRESHOLD) {
             return MULTIPLIER_TABLE[bands];
         }
-        // Fallback for bands > 50 (shouldn't happen in normal gameplay)
+        // Fallback for bands > 15 (shouldn't happen in normal gameplay)
         multiplier = MULTIPLIER_TABLE[SOLO_MAX_THRESHOLD];
         for (uint256 i = SOLO_MAX_THRESHOLD; i < bands; i++) {
             multiplier = (multiplier * (BASIS_POINTS + MULTIPLIER_RATE_BPS)) / BASIS_POINTS;

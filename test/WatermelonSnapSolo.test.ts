@@ -58,38 +58,32 @@ describe("WatermelonSnapSolo", function () {
       ).to.be.revertedWithCustomError(contract, "InvalidEntryFee");
       // Too high
       await expect(
-        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ENTROPY_PROVIDER, ethers.parseEther("2"))
+        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ENTROPY_PROVIDER, ethers.parseEther("11"))
       ).to.be.revertedWithCustomError(contract, "InvalidEntryFee");
     });
   });
 
-  describe("Multiplier Calculation (2.5% Exponential)", function () {
+  describe("Multiplier Calculation (15% Exponential)", function () {
     it("Should return 1.0x for 0 bands", async function () {
       expect(await contract.getMultiplierForBands(0)).to.equal(10000n);
     });
 
+    it("Should calculate correct multiplier for 5 bands", async function () {
+      // 1.15^5 ≈ 2.0114 -> 20114 BP
+      const mult = await contract.getMultiplierForBands(5);
+      expect(mult).to.be.closeTo(20114n, 50n);
+    });
+
     it("Should calculate correct multiplier for 10 bands", async function () {
-      // 1.025^10 ≈ 1.2801 -> 12801 BP
+      // 1.15^10 ≈ 4.0456 -> ~40456 BP
       const mult = await contract.getMultiplierForBands(10);
-      expect(mult).to.be.closeTo(12801n, 10n);
+      expect(mult).to.be.closeTo(40456n, 100n);
     });
 
-    it("Should calculate correct multiplier for 20 bands", async function () {
-      // 1.025^20 ≈ 1.6386 -> ~16386 BP
-      const mult = await contract.getMultiplierForBands(20);
-      expect(mult).to.be.closeTo(16386n, 20n);
-    });
-
-    it("Should calculate correct multiplier for 30 bands", async function () {
-      // 1.025^30 ≈ 2.0976 -> ~20976 BP
-      const mult = await contract.getMultiplierForBands(30);
-      expect(mult).to.be.closeTo(20976n, 30n);
-    });
-
-    it("Should calculate correct multiplier for 49 bands", async function () {
-      // 1.025^49 ≈ 3.3533 -> 33533 BP
-      const mult = await contract.getMultiplierForBands(49);
-      expect(mult).to.be.closeTo(33533n, 50n);
+    it("Should calculate correct multiplier for 14 bands", async function () {
+      // 1.15^14 ≈ 7.0757 -> ~70757 BP
+      const mult = await contract.getMultiplierForBands(14);
+      expect(mult).to.be.closeTo(70757n, 150n);
     });
   });
 
@@ -177,8 +171,8 @@ describe("WatermelonSnapSolo", function () {
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      // Activate game with high threshold
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      // Activate game with high threshold (max is 15)
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
       // Add 5 bands
       for (let i = 0; i < 5; i++) {
@@ -187,8 +181,8 @@ describe("WatermelonSnapSolo", function () {
 
       const gameState = await contract.getGameState(gameId);
       expect(gameState.currentBands).to.equal(5n);
-      // 1.025^5 ≈ 1.1314 -> 11314 BP
-      expect(gameState.currentMultiplier).to.be.closeTo(11314n, 10n);
+      // 1.15^5 ≈ 2.0114 -> 20114 BP
+      expect(gameState.currentMultiplier).to.be.closeTo(20114n, 50n);
     });
 
     it("Should explode when reaching threshold", async function () {
@@ -234,7 +228,7 @@ describe("WatermelonSnapSolo", function () {
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
       // Add 10 bands
       for (let i = 0; i < 10; i++) {
@@ -255,7 +249,7 @@ describe("WatermelonSnapSolo", function () {
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
       // Add 10 bands
       for (let i = 0; i < 10; i++) {
@@ -277,7 +271,7 @@ describe("WatermelonSnapSolo", function () {
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
       await expect(
         contract.connect(owner).addBand(gameId)
@@ -290,7 +284,7 @@ describe("WatermelonSnapSolo", function () {
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
       await expect(
         contract.connect(owner).cashOut(gameId)
@@ -583,7 +577,7 @@ describe("WatermelonSnapSolo", function () {
       const gameId = await contract.soloGameCounter();
 
       // Activate the game
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
       // Try to cancel (should fail even after timeout)
       await ethers.provider.send("evm_increaseTime", [3600 + 1]);
@@ -616,7 +610,7 @@ describe("WatermelonSnapSolo", function () {
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
       const gameId = await contract.soloGameCounter();
 
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
       // Add bands and cash out
       for (let i = 0; i < 10; i++) {
@@ -634,18 +628,18 @@ describe("WatermelonSnapSolo", function () {
     it("Should maintain sorted order with multiple players", async function () {
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
-      // Player 1: 5 bands
+      // Player 1: 3 bands
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
-      for (let i = 0; i < 5; i++) {
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      for (let i = 0; i < 3; i++) {
         await contract.connect(player).addBand(1);
       }
       await contract.connect(player).cashOut(1);
 
-      // Player 2: 15 bands (higher score)
+      // Player 2: 10 bands (higher score)
       await contract.connect(player2).startGame({ value: ENTRY_FEE + vrfFee });
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 50);
-      for (let i = 0; i < 15; i++) {
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 15);
+      for (let i = 0; i < 10; i++) {
         await contract.connect(player2).addBand(2);
       }
       await contract.connect(player2).cashOut(2);
@@ -659,18 +653,18 @@ describe("WatermelonSnapSolo", function () {
     it("Should return correct player rank", async function () {
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
-      // Player 1
+      // Player 1: 3 bands
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
-      for (let i = 0; i < 5; i++) {
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      for (let i = 0; i < 3; i++) {
         await contract.connect(player).addBand(1);
       }
       await contract.connect(player).cashOut(1);
 
-      // Player 2 with higher score
+      // Player 2 with higher score: 10 bands
       await contract.connect(player2).startGame({ value: ENTRY_FEE + vrfFee });
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 50);
-      for (let i = 0; i < 15; i++) {
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 15);
+      for (let i = 0; i < 10; i++) {
         await contract.connect(player2).addBand(2);
       }
       await contract.connect(player2).cashOut(2);
@@ -683,20 +677,20 @@ describe("WatermelonSnapSolo", function () {
     it("Should update player position when they beat their own score", async function () {
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
-      // First game: 5 bands
+      // First game: 3 bands
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
-      for (let i = 0; i < 5; i++) {
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      for (let i = 0; i < 3; i++) {
         await contract.connect(player).addBand(1);
       }
       await contract.connect(player).cashOut(1);
 
       const score1 = (await contract.getLeaderboard(1))[0].score;
 
-      // Second game: 20 bands (higher score)
+      // Second game: 12 bands (higher score)
       await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
-      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 50);
-      for (let i = 0; i < 20; i++) {
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 2, 15);
+      for (let i = 0; i < 12; i++) {
         await contract.connect(player).addBand(2);
       }
       await contract.connect(player).cashOut(2);
@@ -834,11 +828,12 @@ describe("WatermelonSnapSolo", function () {
         for (let i = 0; i < 12; i++) {
           const playerSigner = signers[i + 4]; // Skip owner, player, player2, recipient
           await contract.connect(playerSigner).startGame({ value: ENTRY_FEE + vrfFee });
-          // Use high threshold (50) so games don't explode
-          await mockEntropy.fulfillRequest(await contract.getAddress(), i + 1, 50);
+          // Use high threshold (15) so games don't explode
+          await mockEntropy.fulfillRequest(await contract.getAddress(), i + 1, 15);
 
-          // Add bands to get different scores
-          for (let j = 0; j < i + 1; j++) {
+          // Add bands to get different scores (max 12 to stay under threshold)
+          const bandsToAdd = Math.min(i + 1, 12);
+          for (let j = 0; j < bandsToAdd; j++) {
             await contract.connect(playerSigner).addBand(i + 1);
           }
           await contract.connect(playerSigner).cashOut(i + 1);
@@ -858,10 +853,12 @@ describe("WatermelonSnapSolo", function () {
         for (let i = 0; i < 10; i++) {
           const playerSigner = signers[i + 4];
           await contract.connect(playerSigner).startGame({ value: ENTRY_FEE + vrfFee });
-          // Use high threshold (50) so games don't explode
-          await mockEntropy.fulfillRequest(await contract.getAddress(), i + 1, 50);
+          // Use high threshold (15) so games don't explode
+          await mockEntropy.fulfillRequest(await contract.getAddress(), i + 1, 15);
 
-          for (let j = 0; j <= i; j++) {
+          // Add bands (max 10 to stay safely under threshold)
+          const bandsToAdd = Math.min(i + 1, 10);
+          for (let j = 0; j < bandsToAdd; j++) {
             await contract.connect(playerSigner).addBand(i + 1);
           }
           await contract.connect(playerSigner).cashOut(i + 1);
@@ -873,10 +870,10 @@ describe("WatermelonSnapSolo", function () {
         // New player with score higher than lowest
         const newPlayer = signers[14];
         await contract.connect(newPlayer).startGame({ value: ENTRY_FEE + vrfFee });
-        await mockEntropy.fulfillRequest(await contract.getAddress(), 11, 50);
+        await mockEntropy.fulfillRequest(await contract.getAddress(), 11, 15);
 
-        // Add enough bands to beat the lowest score
-        for (let j = 0; j < 15; j++) {
+        // Add enough bands to beat the lowest score (12 bands)
+        for (let j = 0; j < 12; j++) {
           await contract.connect(newPlayer).addBand(11);
         }
         await contract.connect(newPlayer).cashOut(11);
@@ -895,7 +892,7 @@ describe("WatermelonSnapSolo", function () {
 
         // Start game in season 1
         await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
-        await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 50);
+        await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
 
         // Get the current season from the game
         const gameStateBefore = await contract.getGameState(1);
