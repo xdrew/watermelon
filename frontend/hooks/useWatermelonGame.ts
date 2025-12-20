@@ -18,6 +18,7 @@ import {
   parseGameState,
 } from "@/lib/contract";
 import { parseContractError, isUserRejection } from "@/lib/errors";
+import { useSessionKey } from "./useSessionKey";
 
 export interface GameStateData {
   currentState: GameState | null;
@@ -46,6 +47,17 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   const [candidateGameId, setCandidateGameId] = useState<bigint | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWaitingForVRF, setIsWaitingForVRF] = useState(false);
+
+  // Session key support for gasless gameplay (EIP-7702)
+  const {
+    isSupported: sessionKeySupported,
+    isActive: sessionKeyActive,
+    isCreatingSession,
+    createSession,
+    executeWithSession,
+    isValidForGame,
+    formattedRemainingTime,
+  } = useSessionKey();
 
   // Read game state
   const { data: rawGameState, refetch: refetchGameState } = useReadContract({
@@ -246,9 +258,29 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     );
   }, [gameCost, writeContract, handleError]);
 
-  const addBand = useCallback(() => {
+  const addBand = useCallback(async () => {
     if (!gameId) return;
     setStatus("Adding band...");
+
+    // Try session key first (no wallet popup!)
+    if (sessionKeyActive && isValidForGame(gameId)) {
+      try {
+        const hash = await executeWithSession("addBand", gameId);
+        if (hash) {
+          // Session key execution succeeded - wait for confirmation
+          setStatus("Band added!");
+          setTimeout(() => {
+            setStatus("");
+            refetchGameState();
+          }, 1000);
+          return;
+        }
+      } catch (err) {
+        console.error("Session key execution failed, falling back to wallet:", err);
+      }
+    }
+
+    // Fallback to regular wallet signing
     writeContract(
       {
         address: CONTRACT_ADDRESS,
@@ -258,11 +290,30 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
       },
       { onError: handleError }
     );
-  }, [gameId, writeContract, handleError]);
+  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState]);
 
-  const cashOut = useCallback(() => {
+  const cashOut = useCallback(async () => {
     if (!gameId) return;
     setStatus("Recording score...");
+
+    // Try session key first (no wallet popup!)
+    if (sessionKeyActive && isValidForGame(gameId)) {
+      try {
+        const hash = await executeWithSession("cashOut", gameId);
+        if (hash) {
+          // Session key execution succeeded - wait for confirmation
+          setStatus("Score recorded!");
+          setTimeout(() => {
+            refetchGameState();
+          }, 1000);
+          return;
+        }
+      } catch (err) {
+        console.error("Session key execution failed, falling back to wallet:", err);
+      }
+    }
+
+    // Fallback to regular wallet signing
     writeContract(
       {
         address: CONTRACT_ADDRESS,
@@ -272,7 +323,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
       },
       { onError: handleError }
     );
-  }, [gameId, writeContract, handleError]);
+  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState]);
 
   const cancelGame = useCallback(() => {
     if (!gameId) return;
@@ -365,6 +416,31 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     }
   }, [gameState.currentState, isWaitingForVRF]);
 
+  // Auto-create session when game becomes active (if EIP-7702 supported)
+  useEffect(() => {
+    if (
+      sessionKeySupported &&
+      !sessionKeyActive &&
+      !isCreatingSession &&
+      gameId &&
+      gameState.currentState === GameState.ACTIVE
+    ) {
+      // Only prompt for session if we don't have one valid for this game
+      if (!isValidForGame(gameId)) {
+        setStatus("Enable fast mode? (one-time signature)");
+        // Auto-create session in background
+        createSession(gameId).then((success) => {
+          if (success) {
+            setStatus("Fast mode enabled!");
+            setTimeout(() => setStatus(""), 2000);
+          } else {
+            setStatus("");
+          }
+        });
+      }
+    }
+  }, [sessionKeySupported, sessionKeyActive, isCreatingSession, gameId, gameState.currentState, isValidForGame, createSession]);
+
   return {
     // State
     gameId,
@@ -388,6 +464,12 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     isCancelled,
     isStale,
     dangerLevel,
+
+    // Session key state (EIP-7702)
+    sessionKeySupported,
+    sessionKeyActive,
+    isCreatingSession,
+    sessionRemainingTime: formattedRemainingTime,
 
     // Actions
     startGame,

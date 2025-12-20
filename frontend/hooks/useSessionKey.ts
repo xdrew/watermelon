@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useWallets } from "@privy-io/react-auth";
 import {
   createWalletClient,
+  custom,
   http,
   encodeFunctionData,
-  parseEther,
   type Hex,
 } from "viem";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
-import { CONTRACT_ADDRESS, MONAD_TESTNET } from "@/lib/contract";
+import { CONTRACT_ADDRESS, SESSION_MANAGER_ADDRESS, MONAD_TESTNET } from "@/lib/contract";
 
 // Session Key Manager ABI (minimal)
 const SESSION_MANAGER_ABI = [
@@ -71,32 +71,84 @@ const SESSION_DURATION = 3600;
 // Storage keys
 const SESSION_KEY_STORAGE = "watermelon_session_key";
 const SESSION_EXPIRY_STORAGE = "watermelon_session_expiry";
+const SESSION_GAME_ID_STORAGE = "watermelon_session_game_id";
 
 export interface SessionKeyState {
-  isActive: boolean;
+  isSupported: boolean;        // EIP-7702 is available
+  isActive: boolean;           // Session is currently active
+  isChecking: boolean;         // Checking support
   remainingTime: number;
   sessionKeyAddress: string | null;
+  gameId: bigint | null;
 }
 
-export function useSessionKey(sessionManagerAddress: string | null) {
+export function useSessionKey() {
   const { wallets } = useWallets();
   const activeWallet = wallets[0];
   const userAddress = activeWallet?.address as `0x${string}` | undefined;
 
-  const [sessionState, setSessionState] = useState<SessionKeyState>({
+  const [state, setState] = useState<SessionKeyState>({
+    isSupported: false,
     isActive: false,
+    isChecking: true,
     remainingTime: 0,
     sessionKeyAddress: null,
+    gameId: null,
   });
   const [isCreatingSession, setIsCreatingSession] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const sessionWalletRef = useRef<ReturnType<typeof createWalletClient> | null>(null);
 
-  // Load session key from storage on mount
+  // Check if EIP-7702 is supported
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    const checkSupport = async () => {
+      // Requirements for session key support:
+      // 1. SessionKeyManager is deployed (address configured)
+      // 2. Wallet is connected
+      // 3. Wallet supports EIP-7702 (signAuthorization)
+
+      if (!SESSION_MANAGER_ADDRESS) {
+        setState(prev => ({ ...prev, isSupported: false, isChecking: false }));
+        return;
+      }
+
+      if (!activeWallet) {
+        setState(prev => ({ ...prev, isChecking: false }));
+        return;
+      }
+
+      try {
+        const provider = await activeWallet.getEthereumProvider();
+
+        // Check if wallet supports EIP-7702 by checking for signAuthorization
+        // This is a heuristic - in practice, we try and catch
+        const walletClient = createWalletClient({
+          chain: MONAD_TESTNET,
+          transport: custom(provider),
+        });
+
+        // Check if signAuthorization method exists
+        const hasEip7702 = typeof (walletClient as any).signAuthorization === 'function';
+
+        setState(prev => ({
+          ...prev,
+          isSupported: hasEip7702,
+          isChecking: false
+        }));
+      } catch {
+        setState(prev => ({ ...prev, isSupported: false, isChecking: false }));
+      }
+    };
+
+    checkSupport();
+  }, [activeWallet]);
+
+  // Load existing session from storage
+  useEffect(() => {
+    if (typeof window === "undefined" || !userAddress) return;
 
     const storedKey = localStorage.getItem(SESSION_KEY_STORAGE);
     const storedExpiry = localStorage.getItem(SESSION_EXPIRY_STORAGE);
+    const storedGameId = localStorage.getItem(SESSION_GAME_ID_STORAGE);
 
     if (storedKey && storedExpiry) {
       const expiry = parseInt(storedExpiry, 10);
@@ -104,59 +156,82 @@ export function useSessionKey(sessionManagerAddress: string | null) {
 
       if (expiry > now) {
         const account = privateKeyToAccount(storedKey as Hex);
-        setSessionState({
+
+        // Create wallet client for session key
+        sessionWalletRef.current = createWalletClient({
+          account,
+          chain: MONAD_TESTNET,
+          transport: http(),
+        });
+
+        setState(prev => ({
+          ...prev,
           isActive: true,
           remainingTime: expiry - now,
           sessionKeyAddress: account.address,
-        });
+          gameId: storedGameId ? BigInt(storedGameId) : null,
+        }));
       } else {
         // Expired - clear storage
-        localStorage.removeItem(SESSION_KEY_STORAGE);
-        localStorage.removeItem(SESSION_EXPIRY_STORAGE);
+        clearSession();
       }
     }
-  }, []);
+  }, [userAddress]);
 
-  // Countdown timer for remaining time
+  // Countdown timer
   useEffect(() => {
-    if (!sessionState.isActive || sessionState.remainingTime <= 0) return;
+    if (!state.isActive || state.remainingTime <= 0) return;
 
     const interval = setInterval(() => {
-      setSessionState((prev) => {
+      setState(prev => {
         const newTime = prev.remainingTime - 1;
         if (newTime <= 0) {
-          // Session expired - clear
-          localStorage.removeItem(SESSION_KEY_STORAGE);
-          localStorage.removeItem(SESSION_EXPIRY_STORAGE);
-          return { isActive: false, remainingTime: 0, sessionKeyAddress: null };
+          clearSession();
+          return { ...prev, isActive: false, remainingTime: 0, sessionKeyAddress: null, gameId: null };
         }
         return { ...prev, remainingTime: newTime };
       });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [sessionState.isActive, sessionState.remainingTime]);
+  }, [state.isActive]);
 
-  // Create a new session
+  const clearSession = useCallback(() => {
+    localStorage.removeItem(SESSION_KEY_STORAGE);
+    localStorage.removeItem(SESSION_EXPIRY_STORAGE);
+    localStorage.removeItem(SESSION_GAME_ID_STORAGE);
+    sessionWalletRef.current = null;
+  }, []);
+
+  // Create a new session for a game
   const createSession = useCallback(
-    async (gameId: bigint) => {
-      if (!userAddress || !sessionManagerAddress || !activeWallet) {
-        setError("Wallet not connected");
+    async (gameId: bigint): Promise<boolean> => {
+      if (!userAddress || !SESSION_MANAGER_ADDRESS || !activeWallet || !state.isSupported) {
         return false;
       }
 
       setIsCreatingSession(true);
-      setError(null);
 
       try {
+        const provider = await activeWallet.getEthereumProvider();
+
         // Generate ephemeral session key
         const sessionPrivateKey = generatePrivateKey();
         const sessionAccount = privateKeyToAccount(sessionPrivateKey);
 
-        // Get the wallet provider
-        const provider = await activeWallet.getEthereumProvider();
+        // Create wallet client for EIP-7702
+        const walletClient = createWalletClient({
+          account: userAddress,
+          chain: MONAD_TESTNET,
+          transport: custom(provider),
+        });
 
-        // Encode createSession call
+        // Step 1: Sign EIP-7702 authorization to delegate EOA to SessionKeyManager
+        const authorization = await (walletClient as any).signAuthorization({
+          contractAddress: SESSION_MANAGER_ADDRESS,
+        });
+
+        // Step 2: Encode createSession call
         const createSessionData = encodeFunctionData({
           abi: SESSION_MANAGER_ABI,
           functionName: "createSession",
@@ -169,143 +244,134 @@ export function useSessionKey(sessionManagerAddress: string | null) {
           ],
         });
 
-        // For EIP-7702, we need to:
-        // 1. Sign an authorization to delegate EOA to SessionKeyManager
-        // 2. Send a transaction with the authorization + createSession call
+        // Step 3: Send EIP-7702 transaction (type 0x04)
+        const hash = await walletClient.sendTransaction({
+          to: userAddress, // Call to self (delegated EOA)
+          data: createSessionData,
+          authorizationList: [authorization],
+        } as any);
 
-        // Note: This requires EIP-7702 support in the wallet
-        // For now, we'll use a regular transaction as a placeholder
-        // In production with EIP-7702:
-        // const authorization = await walletClient.signAuthorization({
-        //   account: userAddress,
-        //   contractAddress: sessionManagerAddress,
-        // });
-
-        const txHash = await provider.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: userAddress,
-              to: sessionManagerAddress,
-              data: createSessionData,
-              // In production: authorizationList: [authorization]
-            },
-          ],
-        });
-
-        // Wait for confirmation (simplified)
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Wait for confirmation
+        // In production, use waitForTransactionReceipt
+        await new Promise(resolve => setTimeout(resolve, 3000));
 
         // Store session key
         const expiry = Math.floor(Date.now() / 1000) + SESSION_DURATION;
         localStorage.setItem(SESSION_KEY_STORAGE, sessionPrivateKey);
         localStorage.setItem(SESSION_EXPIRY_STORAGE, expiry.toString());
+        localStorage.setItem(SESSION_GAME_ID_STORAGE, gameId.toString());
 
-        setSessionState({
+        // Create wallet client for session key
+        sessionWalletRef.current = createWalletClient({
+          account: sessionAccount,
+          chain: MONAD_TESTNET,
+          transport: http(),
+        });
+
+        setState(prev => ({
+          ...prev,
           isActive: true,
           remainingTime: SESSION_DURATION,
           sessionKeyAddress: sessionAccount.address,
-        });
+          gameId,
+        }));
 
         return true;
       } catch (err) {
         console.error("Failed to create session:", err);
-        setError(err instanceof Error ? err.message : "Failed to create session");
         return false;
       } finally {
         setIsCreatingSession(false);
       }
     },
-    [userAddress, sessionManagerAddress, activeWallet]
+    [userAddress, activeWallet, state.isSupported]
   );
 
-  // Execute a call using the session key
+  // Execute a call using the session key (no wallet popup!)
   const executeWithSession = useCallback(
-    async (functionName: "addBand" | "cashOut", gameId: bigint) => {
-      if (!sessionState.isActive || !userAddress || !sessionManagerAddress) {
-        throw new Error("No active session");
+    async (functionName: "addBand" | "cashOut", gameId: bigint): Promise<Hex | null> => {
+      if (!state.isActive || !userAddress || !SESSION_MANAGER_ADDRESS || !sessionWalletRef.current) {
+        return null;
       }
 
-      const storedKey = localStorage.getItem(SESSION_KEY_STORAGE);
-      if (!storedKey) {
-        throw new Error("Session key not found");
+      // Verify gameId matches session
+      if (state.gameId !== null && state.gameId !== gameId) {
+        console.error("GameId mismatch with session");
+        return null;
       }
 
-      const sessionAccount = privateKeyToAccount(storedKey as Hex);
+      try {
+        // Encode the game contract call
+        const gameCallData = encodeFunctionData({
+          abi: [
+            {
+              name: functionName,
+              type: "function",
+              inputs: [{ name: "gameId", type: "uint256" }],
+              outputs: [],
+              stateMutability: "nonpayable",
+            },
+          ],
+          functionName,
+          args: [gameId],
+        });
 
-      // Create wallet client for session key
-      const sessionWalletClient = createWalletClient({
-        account: sessionAccount,
-        chain: MONAD_TESTNET,
-        transport: http(),
-      });
+        // Encode execute call
+        const executeData = encodeFunctionData({
+          abi: SESSION_MANAGER_ABI,
+          functionName: "execute",
+          args: [userAddress, CONTRACT_ADDRESS, gameCallData],
+        });
 
-      // Encode the game contract call
-      const gameCallData = encodeFunctionData({
-        abi: [
-          {
-            name: functionName,
-            type: "function",
-            inputs: [{ name: "gameId", type: "uint256" }],
-            outputs: [],
-            stateMutability: "nonpayable",
-          },
-        ],
-        functionName,
-        args: [gameId],
-      });
+        // Send via session key - NO WALLET POPUP
+        const hash = await sessionWalletRef.current.sendTransaction({
+          account: sessionWalletRef.current.account!,
+          to: userAddress, // User's delegated EOA
+          data: executeData,
+          chain: MONAD_TESTNET,
+        });
 
-      // Encode execute call to SessionKeyManager
-      const executeData = encodeFunctionData({
-        abi: SESSION_MANAGER_ABI,
-        functionName: "execute",
-        args: [userAddress, CONTRACT_ADDRESS, gameCallData],
-      });
-
-      // In production with EIP-7702, this call would go to the user's
-      // delegated EOA address. For now, we call the SessionKeyManager directly.
-      const hash = await sessionWalletClient.sendTransaction({
-        to: sessionManagerAddress as `0x${string}`,
-        data: executeData,
-      });
-
-      return hash;
+        return hash;
+      } catch (err) {
+        console.error("Session execution failed:", err);
+        return null;
+      }
     },
-    [sessionState.isActive, userAddress, sessionManagerAddress]
+    [state.isActive, state.gameId, userAddress]
   );
 
-  // Revoke current session
+  // Revoke session
   const revokeSession = useCallback(async () => {
-    localStorage.removeItem(SESSION_KEY_STORAGE);
-    localStorage.removeItem(SESSION_EXPIRY_STORAGE);
-
-    setSessionState({
+    clearSession();
+    setState(prev => ({
+      ...prev,
       isActive: false,
       remainingTime: 0,
       sessionKeyAddress: null,
-    });
-  }, []);
+      gameId: null,
+    }));
+  }, [clearSession]);
 
-  // Format remaining time as mm:ss
-  const formattedRemainingTime = `${Math.floor(sessionState.remainingTime / 60)}:${(
-    sessionState.remainingTime % 60
-  )
-    .toString()
-    .padStart(2, "0")}`;
+  // Check if session is valid for a specific gameId
+  const isValidForGame = useCallback((gameId: bigint): boolean => {
+    if (!state.isActive || state.remainingTime <= 0) return false;
+    if (state.gameId === null) return true; // Session allows any game
+    return state.gameId === gameId;
+  }, [state.isActive, state.remainingTime, state.gameId]);
 
   return {
     // State
-    sessionState,
+    isSupported: state.isSupported,
+    isActive: state.isActive,
+    isChecking: state.isChecking,
     isCreatingSession,
-    error,
-    formattedRemainingTime,
+    remainingTime: state.remainingTime,
+    formattedRemainingTime: `${Math.floor(state.remainingTime / 60)}:${(state.remainingTime % 60).toString().padStart(2, "0")}`,
 
     // Actions
     createSession,
     executeWithSession,
     revokeSession,
-
-    // Helpers
-    hasActiveSession: sessionState.isActive && sessionState.remainingTime > 0,
+    isValidForGame,
   };
 }

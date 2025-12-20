@@ -42,6 +42,10 @@ export function Game() {
     isCancelled,
     isStale,
     dangerLevel,
+    sessionKeySupported,
+    sessionKeyActive,
+    isCreatingSession,
+    sessionRemainingTime,
     startGame,
     addBand,
     cashOut,
@@ -99,6 +103,21 @@ export function Game() {
 
       {/* Main card */}
       <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+
+        {/* Session key indicator */}
+        {sessionKeyActive && isGameActive && (
+          <div className="flex items-center justify-center gap-1.5 mb-4">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            <span className="text-xs text-green-600 font-medium">Fast Mode</span>
+            <span className="text-xs text-gray-400">({sessionRemainingTime})</span>
+          </div>
+        )}
+        {isCreatingSession && (
+          <div className="flex items-center justify-center gap-1.5 mb-4">
+            <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs text-blue-600">Enabling fast mode...</span>
+          </div>
+        )}
 
         {/* Watermelon */}
         <div className="relative w-40 h-40 mx-auto mb-8">
