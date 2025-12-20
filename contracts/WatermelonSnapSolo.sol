@@ -11,6 +11,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     IEntropy public immutable entropy;
     address public immutable entropyProvider;
+    uint256 public immutable entryFee;
     address public owner;
 
     uint256 public soloGameCounter;
@@ -31,7 +32,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     uint256 public constant SOLO_MIN_THRESHOLD = 1;
     uint256 public constant SOLO_MAX_THRESHOLD = 50;
-    uint256 public constant ENTRY_FEE = 0.01 ether;
+    uint256 public constant MIN_ENTRY_FEE = 0.001 ether;
+    uint256 public constant MAX_ENTRY_FEE = 1 ether;
     uint256 public constant PRIZE_POOL_BPS = 9000; // 90% to prize pool
     uint256 public constant PROTOCOL_FEE_BPS = 1000; // 10% protocol fee
     uint256 public constant BASIS_POINTS = 10000;
@@ -156,6 +158,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error TransferFailed();
     error OnlyOwner();
     error ZeroAddress();
+    error InvalidEntryFee();
     error InsufficientFee();
     error SeasonAlreadyFinalized();
     error SeasonNotOver();
@@ -186,13 +189,18 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     /// @param _entropyProvider Address of the entropy provider
     constructor(
         address _entropy,
-        address _entropyProvider
+        address _entropyProvider,
+        uint256 _entryFee
     ) {
         if (_entropy == address(0) || _entropyProvider == address(0)) {
             revert ZeroAddress();
         }
+        if (_entryFee < MIN_ENTRY_FEE || _entryFee > MAX_ENTRY_FEE) {
+            revert InvalidEntryFee();
+        }
         entropy = IEntropy(_entropy);
         entropyProvider = _entropyProvider;
+        entryFee = _entryFee;
         owner = msg.sender;
 
         // Initialize reentrancy guard
@@ -222,7 +230,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
         // Get VRF fee
         uint256 vrfFee = entropy.getFee(entropyProvider);
-        uint256 totalRequired = ENTRY_FEE + vrfFee;
+        uint256 totalRequired = entryFee + vrfFee;
         if (msg.value < totalRequired) revert InsufficientFee();
 
         // Refund excess
@@ -232,8 +240,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         }
 
         // Split entry fee
-        uint256 toPrizePool = (ENTRY_FEE * PRIZE_POOL_BPS) / BASIS_POINTS;
-        uint256 toProtocol = ENTRY_FEE - toPrizePool;
+        uint256 toPrizePool = (entryFee * PRIZE_POOL_BPS) / BASIS_POINTS;
+        uint256 toProtocol = entryFee - toPrizePool;
 
         prizePool += toPrizePool;
         seasonPrizePool[currentSeason] += toPrizePool;
@@ -325,7 +333,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         game.state = SoloState.CANCELLED;
 
         // Calculate refund (entry fee portion that went to prize pool)
-        uint256 refundAmount = (ENTRY_FEE * PRIZE_POOL_BPS) / BASIS_POINTS;
+        uint256 refundAmount = (entryFee * PRIZE_POOL_BPS) / BASIS_POINTS;
 
         // Deduct from prize pool and season prize pool
         if (prizePool >= refundAmount) {
@@ -553,10 +561,10 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     }
 
     /// @notice Get total cost to start a game
-    function getGameCost() external view returns (uint256 entryFee, uint256 vrfFee, uint256 total) {
-        entryFee = ENTRY_FEE;
+    function getGameCost() external view returns (uint256 _entryFee, uint256 vrfFee, uint256 total) {
+        _entryFee = entryFee;
         vrfFee = entropy.getFee(entropyProvider);
-        total = entryFee + vrfFee;
+        total = _entryFee + vrfFee;
     }
 
     // ============ INTERNAL FUNCTIONS ============

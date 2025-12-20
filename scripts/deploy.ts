@@ -4,6 +4,10 @@ import { ethers } from "hardhat";
 const MONAD_TESTNET_ENTROPY = "0x36825bf3Fbdf5a29E2d5148bfe7Dcf7B5639e320";
 const DEFAULT_ENTROPY_PROVIDER = "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344";
 
+// Default entry fees
+const TESTNET_ENTRY_FEE = "0.01";  // 0.01 MON for testnet
+const MAINNET_ENTRY_FEE = "0.01";  // 0.01 MON for mainnet
+
 async function main() {
   const [deployer] = await ethers.getSigners();
   console.log("Deploying WatermelonSnapSolo with account:", deployer.address);
@@ -13,12 +17,20 @@ async function main() {
   const entropyAddress = process.env.ENTROPY_ADDRESS || MONAD_TESTNET_ENTROPY;
   const entropyProvider = process.env.ENTROPY_PROVIDER || DEFAULT_ENTROPY_PROVIDER;
 
+  // Get entry fee from env or use network-appropriate default
+  const network = await ethers.provider.getNetwork();
+  const isTestnet = network.chainId === 10143n;
+  const defaultEntryFee = isTestnet ? TESTNET_ENTRY_FEE : MAINNET_ENTRY_FEE;
+  const entryFee = ethers.parseEther(process.env.ENTRY_FEE || defaultEntryFee);
+
   console.log("\nDeployment parameters:");
+  console.log("- Network:", isTestnet ? "Monad Testnet" : "Monad Mainnet");
   console.log("- Entropy:", entropyAddress);
   console.log("- Entropy Provider:", entropyProvider);
+  console.log("- Entry Fee:", ethers.formatEther(entryFee), "MON");
 
   const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
-  const contract = await WatermelonSnapSolo.deploy(entropyAddress, entropyProvider);
+  const contract = await WatermelonSnapSolo.deploy(entropyAddress, entropyProvider, entryFee);
 
   await contract.waitForDeployment();
   const contractAddress = await contract.getAddress();

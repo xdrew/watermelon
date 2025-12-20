@@ -27,7 +27,8 @@ describe("WatermelonSnapSolo", function () {
     const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
     contract = await WatermelonSnapSolo.deploy(
       await mockEntropy.getAddress(),
-      ENTROPY_PROVIDER
+      ENTROPY_PROVIDER,
+      ENTRY_FEE
     );
     await contract.waitForDeployment();
 
@@ -45,8 +46,20 @@ describe("WatermelonSnapSolo", function () {
     it("Should reject zero addresses", async function () {
       const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
       await expect(
-        WatermelonSnapSolo.deploy(ethers.ZeroAddress, ENTROPY_PROVIDER)
+        WatermelonSnapSolo.deploy(ethers.ZeroAddress, ENTROPY_PROVIDER, ENTRY_FEE)
       ).to.be.revertedWithCustomError(contract, "ZeroAddress");
+    });
+
+    it("Should reject invalid entry fee", async function () {
+      const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
+      // Too low
+      await expect(
+        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ENTROPY_PROVIDER, ethers.parseEther("0.0001"))
+      ).to.be.revertedWithCustomError(contract, "InvalidEntryFee");
+      // Too high
+      await expect(
+        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ENTROPY_PROVIDER, ethers.parseEther("2"))
+      ).to.be.revertedWithCustomError(contract, "InvalidEntryFee");
     });
   });
 

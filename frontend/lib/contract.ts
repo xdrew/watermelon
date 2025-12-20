@@ -288,7 +288,9 @@ export const MONAD_TESTNET = {
 } as const;
 
 // Game constants - must match contract values
-export const ENTRY_FEE = 0.01; // Fixed entry fee in MON
+// Default entry fee for display before contract is loaded
+// Actual fee is read from contract via getGameCost()
+export const DEFAULT_ENTRY_FEE = 0.01;
 export const BASIS_POINTS = 10000;
 export const SEASON_DURATION = 24 * 60 * 60; // 1 day in seconds
 export const STALE_GAME_TIMEOUT = 3600; // 1 hour in seconds

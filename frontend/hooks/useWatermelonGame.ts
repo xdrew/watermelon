@@ -13,7 +13,7 @@ import {
   CONTRACT_ADDRESS,
   CONTRACT_ABI,
   GameState,
-  ENTRY_FEE,
+  DEFAULT_ENTRY_FEE,
   STALE_GAME_TIMEOUT,
   getDangerLevel,
   parseGameState,
@@ -404,9 +404,9 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
 
   // Parse cost info
   const cost: CostData = useMemo(() => ({
-    entryFee: gameCost ? gameCost[0] : parseEther(ENTRY_FEE.toString()),
+    entryFee: gameCost ? gameCost[0] : parseEther(DEFAULT_ENTRY_FEE.toString()),
     vrfFee: gameCost ? gameCost[1] : BigInt(0),
-    total: gameCost ? gameCost[2] : parseEther(ENTRY_FEE.toString()),
+    total: gameCost ? gameCost[2] : parseEther(DEFAULT_ENTRY_FEE.toString()),
   }), [gameCost]);
 
   // Best score

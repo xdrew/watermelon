@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ENTRY_FEE } from "@/lib/contract";
+import { DEFAULT_ENTRY_FEE } from "@/lib/contract";
 
 function getMultiplier(bands: number): number {
   return Math.pow(1.025, bands);
@@ -37,7 +37,7 @@ export function GameDemo() {
     setIsScored(false);
     setFinalScore(0);
     setStatus("");
-    setPrizePool(prev => prev + ENTRY_FEE * 0.9);
+    setPrizePool(prev => prev + DEFAULT_ENTRY_FEE * 0.9);
   };
 
   const addBand = () => {
@@ -153,7 +153,7 @@ export function GameDemo() {
           <div className="space-y-4">
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-500">Entry fee</span>
-              <span className="font-medium">{ENTRY_FEE} MON</span>
+              <span className="font-medium">{DEFAULT_ENTRY_FEE} MON</span>
             </div>
             <button
               onClick={isGameOver ? resetGame : startGame}

@@ -8,7 +8,6 @@ import {
   MONAD_TESTNET,
   GameState,
   formatMultiplier,
-  ENTRY_FEE,
   formatTimeLeft,
   getMultiplierForBands,
   SOLO_MAX_THRESHOLD,
@@ -215,7 +214,7 @@ export function Game() {
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-500">Entry fee</span>
               <div className="text-right">
-                <span className="font-medium">{ENTRY_FEE} MON</span>
+                <span className="font-medium">{Number(formatEther(cost.entryFee)).toFixed(3)} MON</span>
                 {cost.vrfFee > 0 && (
                   <div className="text-xs text-gray-400">+ {Number(formatEther(cost.vrfFee)).toFixed(4)} VRF</div>
                 )}

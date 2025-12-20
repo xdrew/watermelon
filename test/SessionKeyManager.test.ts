@@ -38,7 +38,8 @@ describe("SessionKeyManager", function () {
     const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
     gameContract = await WatermelonSnapSolo.deploy(
       await mockEntropy.getAddress(),
-      ENTROPY_PROVIDER
+      ENTROPY_PROVIDER,
+      ENTRY_FEE
     );
     await gameContract.waitForDeployment();
 
