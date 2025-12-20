@@ -25,7 +25,12 @@
       "Bash(node:*)",
       "Bash(echo:*)",
       "Bash(fold:*)",
-      "Bash(npm view:*)"
+      "Bash(npm view:*)",
+      "Bash(wc:*)",
+      "Bash(git commit:*)",
+      "Bash(git restore:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)"
     ]
   }
 }
