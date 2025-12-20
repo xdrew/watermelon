@@ -90,13 +90,16 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   });
 
   // Check state of candidate game (last game in player's history)
-  const { data: candidateGameState } = useReadContract({
+  const { data: candidateGameState, isLoading: isLoadingCandidateState } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getGameState",
     args: candidateGameId ? [candidateGameId] : undefined,
     query: { enabled: !!candidateGameId },
   });
+
+  // Track if we're validating a candidate game (prevents race conditions)
+  const isValidatingGame = !!candidateGameId && (isLoadingCandidateState || !candidateGameState);
 
   // Write contract
   const { writeContract, data: txHash, isPending } = useWriteContract();
@@ -369,6 +372,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     isWaitingForVRF,
     isPending,
     isConfirming,
+    isValidatingGame,
 
     // Parsed data
     gameState,

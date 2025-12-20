@@ -30,6 +30,7 @@ export function Game() {
     isWaitingForVRF,
     isPending,
     isConfirming,
+    isValidatingGame,
     gameState,
     season,
     cost,
@@ -79,7 +80,7 @@ export function Game() {
     );
   }
 
-  const isProcessing = isPending || isConfirming;
+  const isProcessing = isPending || isConfirming || isValidatingGame;
   const showVRFWaiting = isWaitingForVRF || gameState.currentState === GameState.REQUESTING_VRF;
 
   return (
