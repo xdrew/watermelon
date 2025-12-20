@@ -154,7 +154,11 @@ export function Game() {
 
         {/* Status */}
         {status && !isGameOver && (
-          <div className="text-center text-sm text-gray-500 mb-6">
+          <div className={`text-center text-sm mb-6 ${
+            status.startsWith('Error:')
+              ? 'text-red-600 bg-red-50 py-2 px-3 rounded-lg'
+              : 'text-gray-500'
+          }`}>
             {status}
           </div>
         )}
