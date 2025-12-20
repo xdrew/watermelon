@@ -295,8 +295,8 @@ export const BASIS_POINTS = 10000;
 export const SEASON_DURATION = 24 * 60 * 60; // 1 day in seconds
 export const STALE_GAME_TIMEOUT = 3600; // 1 hour in seconds
 export const SOLO_MIN_THRESHOLD = 1;
-export const SOLO_MAX_THRESHOLD = 50;
-export const MULTIPLIER_RATE_BPS = 250; // 2.5% per band
+export const SOLO_MAX_THRESHOLD = 15;
+export const MULTIPLIER_RATE_BPS = 1500; // 15% per band
 export const LEADERBOARD_SIZE = 10;
 export const MAX_GAMES_PER_PAGE = 50;
 
@@ -334,7 +334,7 @@ export function getGasPrice(chainId: number) {
 export const GAS_PRICE = TESTNET_GAS_PRICE;
 
 // Precomputed multiplier table (matches contract MULTIPLIER_TABLE)
-// MULTIPLIER_TABLE[n] = 1.025^n in basis points
+// MULTIPLIER_TABLE[n] = 1.15^n in basis points
 const MULTIPLIER_TABLE: bigint[] = (() => {
   const table: bigint[] = [];
   let multiplier = BigInt(BASIS_POINTS);
@@ -350,7 +350,7 @@ export function getMultiplierForBands(bands: number): bigint {
   if (bands <= SOLO_MAX_THRESHOLD) {
     return MULTIPLIER_TABLE[bands];
   }
-  // Fallback for bands > 50
+  // Fallback for bands > 15
   let multiplier = MULTIPLIER_TABLE[SOLO_MAX_THRESHOLD];
   for (let i = SOLO_MAX_THRESHOLD; i < bands; i++) {
     multiplier = (multiplier * BigInt(BASIS_POINTS + MULTIPLIER_RATE_BPS)) / BigInt(BASIS_POINTS);

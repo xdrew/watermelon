@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { Game } from "@/components/Game";
 import { GameDemo } from "@/components/GameDemo";
@@ -19,7 +20,17 @@ export default function Home() {
             <span>Watermelon Snap</span>
           </h1>
           <div className="flex items-center gap-4">
-            {!isDemo && <ConnectWallet />}
+            {!isDemo && (
+              <>
+                <Link
+                  href="/history"
+                  className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
+                >
+                  History
+                </Link>
+                <ConnectWallet />
+              </>
+            )}
           </div>
         </div>
       </header>
