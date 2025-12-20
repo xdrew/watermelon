@@ -26,7 +26,7 @@ export default function Home() {
 
       {/* Mode Toggle */}
       <div className="container mx-auto px-4 mb-4">
-        <div className="flex justify-center">
+        <div className="flex flex-col items-center gap-2">
           <div className="inline-flex border border-gray-200 rounded-xl p-1 bg-white">
             <button
               onClick={() => setIsDemo(true)}
@@ -48,6 +48,13 @@ export default function Home() {
             >
               Live
             </button>
+          </div>
+          <div className={`text-xs px-3 py-1 rounded-full ${
+            isDemo
+              ? "bg-yellow-100 text-yellow-700"
+              : "bg-green-100 text-green-700"
+          }`}>
+            {isDemo ? "Practice mode - no real MON" : "Live on Monad Testnet"}
           </div>
         </div>
       </div>
