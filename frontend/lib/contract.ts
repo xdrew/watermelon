@@ -1,6 +1,9 @@
-// Contract address from environment variable, with fallback for development
+// Contract addresses from environment variables, with fallbacks for development
 const DEFAULT_CONTRACT_ADDRESS = "0xC9b820C2437eFEa3CDE50Df75C3d8D9E6c5DBDf7";
 export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS) as `0x${string}`;
+
+// SessionKeyManager for EIP-7702 session keys (optional - set after deploying)
+export const SESSION_MANAGER_ADDRESS = process.env.NEXT_PUBLIC_SESSION_MANAGER_ADDRESS as `0x${string}` | undefined;
 
 export const CONTRACT_ABI = [
   // View functions
