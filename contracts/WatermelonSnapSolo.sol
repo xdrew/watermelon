@@ -19,6 +19,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 public prizePool;
     uint256 public protocolBalance;
     uint256 public seasonStartTime;
+    bool public paused;
 
     // Reentrancy guard
     uint256 private constant NOT_ENTERED = 1;
@@ -152,6 +153,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     event SoloGameCancelled(uint256 indexed gameId, address indexed player, uint256 refundAmount);
     event LeaderboardUpdated(uint256 indexed season, address indexed player, uint256 score, uint256 rank);
     event SeasonAutoFinalized(uint256 indexed season, address indexed triggeredBy, uint256 callerReward, uint256 totalDistributed);
+    event Paused(address indexed by);
+    event Unpaused(address indexed by);
 
     // ============ ERRORS ============
 
@@ -175,6 +178,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error ScoreOverflow();
     error NoPrizePool();
     error NoWinners();
+    error ContractPaused();
 
     // ============ MODIFIERS ============
 
@@ -188,6 +192,11 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         _status = ENTERED;
         _;
         _status = NOT_ENTERED;
+    }
+
+    modifier whenNotPaused() {
+        if (paused) revert ContractPaused();
+        _;
     }
 
     // ============ CONSTRUCTOR ============
@@ -232,7 +241,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     /// @notice Start a new game with fixed entry fee
     /// @return gameId The ID of the created game
-    function startGame() external payable returns (uint256 gameId) {
+    function startGame() external payable whenNotPaused returns (uint256 gameId) {
         // Check for new season
         _checkAndStartNewSeason();
 
@@ -735,6 +744,18 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     }
 
     // ============ ADMIN FUNCTIONS ============
+
+    /// @notice Pause the contract (emergency stop for new games)
+    function pause() external onlyOwner {
+        paused = true;
+        emit Paused(msg.sender);
+    }
+
+    /// @notice Unpause the contract
+    function unpause() external onlyOwner {
+        paused = false;
+        emit Unpaused(msg.sender);
+    }
 
     /// @notice Manually start a new season (owner only)
     function startNewSeason() external onlyOwner {

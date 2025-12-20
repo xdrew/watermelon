@@ -930,6 +930,54 @@ describe("WatermelonSnapSolo", function () {
         contract.transferOwnership(ethers.ZeroAddress)
       ).to.be.revertedWithCustomError(contract, "ZeroAddress");
     });
+
+    it("Should allow owner to pause and unpause", async function () {
+      await expect(contract.pause())
+        .to.emit(contract, "Paused")
+        .withArgs(owner.address);
+
+      expect(await contract.paused()).to.equal(true);
+
+      await expect(contract.unpause())
+        .to.emit(contract, "Unpaused")
+        .withArgs(owner.address);
+
+      expect(await contract.paused()).to.equal(false);
+    });
+
+    it("Should reject pause from non-owner", async function () {
+      await expect(
+        contract.connect(player).pause()
+      ).to.be.revertedWithCustomError(contract, "OnlyOwner");
+    });
+
+    it("Should block startGame when paused", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.pause();
+
+      await expect(
+        contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee })
+      ).to.be.revertedWithCustomError(contract, "ContractPaused");
+    });
+
+    it("Should allow active games to continue when paused", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      // Start game before pause
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      const gameId = await contract.soloGameCounter();
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+
+      // Pause
+      await contract.pause();
+
+      // Active game can still add bands and cash out
+      await contract.connect(player).addBand(gameId);
+      await contract.connect(player).addBand(gameId);
+      await expect(contract.connect(player).cashOut(gameId))
+        .to.emit(contract, "SoloScored");
+    });
   });
 
   describe("View Functions", function () {
