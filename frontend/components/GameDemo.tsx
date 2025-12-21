@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { DEFAULT_ENTRY_FEE } from "@/lib/contract";
+import { DEFAULT_ENTRY_FEE, getDangerLevel, SOLO_MAX_THRESHOLD, getMultiplierForBands, formatMultiplier } from "@/lib/contract";
 
-function getMultiplier(bands: number): number {
-  return Math.pow(1.025, bands);
-}
-
-function calculateScore(bands: number, multiplier: number): number {
-  return Math.floor(bands * multiplier * 100);
+function calculateScore(bands: number): number {
+  // Match contract: score = bands * multiplier (with 4 decimal precision)
+  const multiplierBps = getMultiplierForBands(bands);
+  return Math.floor((bands * Number(multiplierBps)) / 10000);
 }
 
 export function GameDemo() {
@@ -22,14 +20,14 @@ export function GameDemo() {
   const [bestScore, setBestScore] = useState(0);
   const [prizePool, setPrizePool] = useState(0);
 
-  const multiplier = getMultiplier(currentBands);
-  const potentialScore = calculateScore(currentBands, multiplier);
-  const dangerLevel = Math.min(100, currentBands * 2);
+  const multiplier = getMultiplierForBands(currentBands);
+  const potentialScore = calculateScore(currentBands);
+  const dangerLevel = getDangerLevel(currentBands);
   const isGameActive = gameId !== null && !isExploded && !isScored;
   const isGameOver = isExploded || isScored;
 
   const startGame = () => {
-    const newThreshold = Math.floor(Math.random() * 50) + 1;
+    const newThreshold = Math.floor(Math.random() * 15) + 1;
     setGameId(Date.now());
     setThreshold(newThreshold);
     setCurrentBands(0);
@@ -75,31 +73,24 @@ export function GameDemo() {
   };
 
   return (
-    <div className="max-w-md mx-auto px-4">
-      {/* Demo badge */}
-      <div className="text-center mb-6">
-        <span className="text-xs text-gray-400 border border-gray-200 rounded-full px-3 py-1">
-          Demo Mode
-        </span>
-      </div>
-
-      {/* Season info */}
-      <div className="flex justify-between items-center mb-8 text-sm">
+    <div className="max-w-md mx-auto">
+      {/* Top stats */}
+      <div className="flex justify-between mb-4 text-sm text-gray-500">
         <div>
-          <div className="text-gray-400 text-xs">Season 1</div>
-          <div className="font-medium">{prizePool.toFixed(2)} MON pool</div>
+          <span className="text-gray-400">Best: </span>
+          <span className="font-medium text-black">{bestScore} pts</span>
         </div>
-        <div className="text-right">
-          <div className="text-gray-400 text-xs">Ends in</div>
-          <div className="font-medium">23h 45m</div>
+        <div>
+          <span className="text-gray-400">Max: </span>
+          <span className="font-medium text-black">{formatMultiplier(getMultiplierForBands(SOLO_MAX_THRESHOLD - 1))}</span>
         </div>
       </div>
 
       {/* Main card */}
-      <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+      <div className="p-4">
 
         {/* Watermelon */}
-        <div className="relative w-40 h-40 mx-auto mb-8">
+        <div className="relative w-36 h-36 mx-auto mb-6">
           <div
             className={`w-full h-full rounded-full flex items-center justify-center text-6xl transition-all ${
               isExploded ? 'bg-red-50' : 'bg-green-50'
@@ -122,7 +113,7 @@ export function GameDemo() {
             <div className="text-center">
               <div className="text-gray-400 text-xs mb-1">Multiplier</div>
               <div className={`text-2xl font-bold ${isExploded ? 'text-red-500' : 'text-black'}`}>
-                {multiplier.toFixed(2)}x
+                {formatMultiplier(multiplier)}
               </div>
             </div>
             <div className="text-center">
@@ -202,17 +193,6 @@ export function GameDemo() {
         ) : null}
       </div>
 
-      {/* Bottom stats */}
-      <div className="flex justify-between mt-6 text-sm text-gray-500">
-        <div>
-          <span className="text-gray-400">Best: </span>
-          <span className="font-medium text-black">{bestScore} pts</span>
-        </div>
-        <div>
-          <span className="text-gray-400">Max: </span>
-          <span className="font-medium text-black">3.35x</span>
-        </div>
-      </div>
     </div>
   );
 }

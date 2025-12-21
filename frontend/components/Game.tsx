@@ -8,7 +8,6 @@ import {
   MONAD_TESTNET,
   GameState,
   formatMultiplier,
-  formatTimeLeft,
   getMultiplierForBands,
   SOLO_MAX_THRESHOLD,
 } from "@/lib/contract";
@@ -87,21 +86,21 @@ export function Game() {
   const showVRFWaiting = isWaitingForVRF || gameState.currentState === GameState.REQUESTING_VRF;
 
   return (
-    <div className="max-w-md mx-auto px-4">
-      {/* Season info */}
-      <div className="flex justify-between items-center mb-8 text-sm">
+    <div className="max-w-md mx-auto">
+      {/* Top stats */}
+      <div className="flex justify-between mb-4 text-sm text-gray-500">
         <div>
-          <div className="text-gray-400 text-xs">Season {season.number}</div>
-          <div className="font-medium">{Number(formatEther(season.prizePool)).toFixed(2)} MON pool</div>
+          <span className="text-gray-400">Best: </span>
+          <span className="font-medium text-black">{bestScore.toString()} pts</span>
         </div>
-        <div className="text-right">
-          <div className="text-gray-400 text-xs">Ends in</div>
-          <div className="font-medium">{formatTimeLeft(season.endTime)}</div>
+        <div>
+          <span className="text-gray-400">Max: </span>
+          <span className="font-medium text-black">{formatMultiplier(getMultiplierForBands(SOLO_MAX_THRESHOLD - 1))}</span>
         </div>
       </div>
 
       {/* Main card */}
-      <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100">
+      <div className="p-4">
 
         {/* Session key indicator */}
         {sessionKeyActive && isGameActive && (
@@ -119,7 +118,7 @@ export function Game() {
         )}
 
         {/* Watermelon */}
-        <div className="relative w-40 h-40 mx-auto mb-8">
+        <div className="relative w-36 h-36 mx-auto mb-6">
           <div
             className={`w-full h-full rounded-full flex items-center justify-center text-6xl transition-all ${
               isExploded ? 'bg-red-50' : 'bg-green-50'
@@ -287,17 +286,6 @@ export function Game() {
         ) : null}
       </div>
 
-      {/* Bottom stats */}
-      <div className="flex justify-between mt-6 text-sm text-gray-500">
-        <div>
-          <span className="text-gray-400">Best: </span>
-          <span className="font-medium text-black">{bestScore.toString()} pts</span>
-        </div>
-        <div>
-          <span className="text-gray-400">Max: </span>
-          <span className="font-medium text-black">{formatMultiplier(getMultiplierForBands(SOLO_MAX_THRESHOLD - 1))}</span>
-        </div>
-      </div>
     </div>
   );
 }

@@ -13,7 +13,7 @@ export default function Home() {
   return (
     <main className="min-h-screen">
       {/* Header */}
-      <header className="container mx-auto px-4 py-6">
+      <header className="container mx-auto px-4 py-4">
         <div className="flex justify-between items-center">
           <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-2">
             <span className="text-3xl md:text-4xl">🍉</span>
@@ -36,7 +36,7 @@ export default function Home() {
       </header>
 
       {/* Mode Toggle */}
-      <div className="container mx-auto px-4 mb-4">
+      <div className="container mx-auto px-4 mb-2">
         <div className="flex flex-col items-center gap-2">
           <div className="inline-flex border border-gray-200 rounded-xl p-1 bg-white">
             <button
@@ -71,9 +71,9 @@ export default function Home() {
       </div>
 
       {/* Game + Leaderboard */}
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex flex-col lg:flex-row gap-8 justify-center">
-          <div className="flex-1 max-w-md">
+      <div className="container mx-auto px-4 py-4">
+        <div className="flex flex-col lg:flex-row gap-4 justify-center items-start">
+          <div className="w-full max-w-md">
             {isDemo ? <GameDemo /> : <Game />}
           </div>
           <div className="w-full lg:w-80">

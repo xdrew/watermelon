@@ -82,11 +82,12 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     functionName: "getSeasonInfo",
   });
 
-  // Read game cost
+  // Read game cost (static, rarely changes - cache indefinitely)
   const { data: gameCost } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getGameCost",
+    query: { staleTime: Infinity },
   });
 
   // Read player's best score for current season
@@ -166,11 +167,12 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     }
   }, [candidateGameId, candidateGameState]);
 
-  // Watch for game started event
+  // Watch for game started event (only when waiting for VRF after starting)
   useWatchContractEvent({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     eventName: "SoloGameStarted",
+    enabled: isWaitingForVRF && !gameId,
     onLogs(logs) {
       const log = logs[0];
       if (log?.args.player?.toLowerCase() === address?.toLowerCase() && log.args.gameId !== undefined) {
@@ -180,11 +182,12 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     },
   });
 
-  // Watch for game ready event
+  // Watch for game ready event (only when waiting for VRF)
   useWatchContractEvent({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     eventName: "SoloGameReady",
+    enabled: isWaitingForVRF,
     onLogs(logs) {
       const log = logs[0];
       if (log?.args.player?.toLowerCase() === address?.toLowerCase()) {
@@ -198,11 +201,12 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     },
   });
 
-  // Watch for explosion event
+  // Watch for explosion event (only during active game)
   useWatchContractEvent({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     eventName: "SoloExploded",
+    enabled: !!gameId,
     onLogs(logs) {
       const log = logs[0];
       if (log && gameId && log.args.gameId === gameId) {
@@ -212,11 +216,12 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     },
   });
 
-  // Watch for score event
+  // Watch for score event (only during active game)
   useWatchContractEvent({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     eventName: "SoloScored",
+    enabled: !!gameId,
     onLogs(logs) {
       const log = logs[0];
       if (log && gameId && log.args.gameId === gameId && log.args.score !== undefined) {

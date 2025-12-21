@@ -41,8 +41,8 @@ export function Leaderboard() {
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
+      <div>
+        <h3 className="text-sm font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
         </div>
@@ -52,16 +52,16 @@ export function Leaderboard() {
 
   if (validEntries.length === 0) {
     return (
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h3 className="font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
-        <p className="text-gray-400 text-sm text-center py-4">No scores yet</p>
+      <div>
+        <h3 className="text-sm font-medium">Season {seasonNumber} Leaderboard</h3>
+        <p className="text-gray-400 text-xs">No scores yet</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-      <h3 className="font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
+    <div>
+      <h3 className="text-sm font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
       <div className="space-y-2">
         {validEntries.map((entry, index) => (
           <div
