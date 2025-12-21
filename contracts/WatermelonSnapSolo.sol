@@ -10,7 +10,6 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     // ============ STATE VARIABLES ============
 
     IEntropy public immutable entropy;
-    address public immutable entropyProvider;
     uint256 public immutable entryFee;
     address public owner;
 
@@ -44,6 +43,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     uint256 public constant LEADERBOARD_SIZE = 10; // Top N players per season
     uint256 public constant MAX_GAMES_PER_PAGE = 50; // Pagination limit
     uint256 public constant CALLER_REWARD_BPS = 100; // 1% reward for triggering distribution
+    uint32 public constant CALLBACK_GAS_LIMIT = 100_000; // Gas limit for entropy callback
 
     // Prize distribution shares in basis points (must sum to 10000)
     // 1st: 40%, 2nd: 25%, 3rd: 15%, 4th: 8%, 5th: 5%, 6th-10th: 1.4% each
@@ -203,20 +203,18 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     /// @notice Initialize the arcade game contract
     /// @param _entropy Address of Pyth Entropy contract
-    /// @param _entropyProvider Address of the entropy provider
+    /// @param _entryFee Entry fee in wei
     constructor(
         address _entropy,
-        address _entropyProvider,
         uint256 _entryFee
     ) {
-        if (_entropy == address(0) || _entropyProvider == address(0)) {
+        if (_entropy == address(0)) {
             revert ZeroAddress();
         }
         if (_entryFee < MIN_ENTRY_FEE || _entryFee > MAX_ENTRY_FEE) {
             revert InvalidEntryFee();
         }
         entropy = IEntropy(_entropy);
-        entropyProvider = _entropyProvider;
         entryFee = _entryFee;
         owner = msg.sender;
 
@@ -246,7 +244,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         _checkAndStartNewSeason();
 
         // Get VRF fee
-        uint256 vrfFee = entropy.getFee(entropyProvider);
+        uint256 vrfFee = entropy.getFeeV2();
         uint256 totalRequired = entryFee + vrfFee;
         if (msg.value < totalRequired) revert InsufficientFee();
 
@@ -266,14 +264,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
         gameId = ++soloGameCounter;
 
-        bytes32 userRandomNumber = keccak256(
-            abi.encodePacked(block.timestamp, block.prevrandao, gameId, msg.sender)
-        );
-
-        uint64 sequenceNumber = entropy.requestWithCallback{value: vrfFee}(
-            entropyProvider,
-            userRandomNumber
-        );
+        // Request random number from Pyth Entropy v2 with custom callback gas limit
+        uint64 sequenceNumber = entropy.requestV2{value: vrfFee}(CALLBACK_GAS_LIMIT);
 
         SoloGame storage game = soloGames[gameId];
         game.player = msg.sender;
@@ -369,6 +361,12 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         emit SoloGameCancelled(gameId, msg.sender, refundAmount);
     }
 
+    /// @notice Returns the entropy contract address (required by IEntropyConsumer)
+    /// @return The entropy contract address
+    function getEntropy() internal view override returns (address) {
+        return address(entropy);
+    }
+
     /// @notice Pyth Entropy callback when VRF is fulfilled
     /// @param sequenceNumber The request sequence number
     /// @param randomNumber The generated random number
@@ -376,8 +374,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint64 sequenceNumber,
         address,
         bytes32 randomNumber
-    ) external override {
-        if (msg.sender != address(entropy)) revert OnlyEntropy();
+    ) internal override {
+        // Caller validation done by _entropyCallback in IEntropyConsumer
 
         uint256 gameId = vrfRequestToGame[sequenceNumber];
         SoloGame storage game = soloGames[gameId];
@@ -591,13 +589,13 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     /// @notice Get current VRF fee
     function getVRFFee() external view returns (uint256) {
-        return entropy.getFee(entropyProvider);
+        return entropy.getFeeV2();
     }
 
     /// @notice Get total cost to start a game
     function getGameCost() external view returns (uint256 _entryFee, uint256 vrfFee, uint256 total) {
         _entryFee = entryFee;
-        vrfFee = entropy.getFee(entropyProvider);
+        vrfFee = entropy.getFeeV2();
         total = _entryFee + vrfFee;
     }
 

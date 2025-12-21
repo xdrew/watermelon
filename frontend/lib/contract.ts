@@ -1,5 +1,5 @@
 // Contract addresses from environment variables, with fallbacks for development
-const DEFAULT_CONTRACT_ADDRESS = "0xC9b820C2437eFEa3CDE50Df75C3d8D9E6c5DBDf7";
+const DEFAULT_CONTRACT_ADDRESS = "0x916A1CeB155E35EEE92A067E3F5b8635b461f12A";
 export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS) as `0x${string}`;
 
 // SessionKeyManager for EIP-7702 session keys (optional - set after deploying)
@@ -41,6 +41,13 @@ export const CONTRACT_ABI = [
   {
     inputs: [],
     name: "getVRFFee",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "entryFee",
     outputs: [{ name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function",
@@ -303,7 +310,7 @@ export const MAX_GAMES_PER_PAGE = 50;
 // Gas optimization settings for Monad
 // Monad charges based on gas limit, not actual usage - use tight limits
 export const GAS_LIMITS = {
-  startGame: 200_000n,      // VRF request + state init
+  startGame: 600_000n,      // VRF request + state init (Pyth Entropy v2 needs ~555k)
   addBand: 80_000n,         // State update + event
   cashOut: 120_000n,        // State update + leaderboard check + event
   cancelStaleGame: 100_000n, // State cleanup + refund

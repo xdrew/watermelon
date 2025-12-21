@@ -277,8 +277,12 @@ export function useSessionKey() {
         }));
 
         return true;
-      } catch (err) {
-        console.error("Failed to create session:", err);
+      } catch (err: unknown) {
+        // Silently fail for unsupported wallet types (EIP-7702 not available)
+        const errorName = (err as { name?: string })?.name;
+        if (errorName !== "AccountTypeNotSupportedError") {
+          console.error("Failed to create session:", err);
+        }
         return false;
       } finally {
         setIsCreatingSession(false);

@@ -30,7 +30,12 @@
       "Bash(git commit:*)",
       "Bash(git restore:*)",
       "Bash(find:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(cast sig:*)",
+      "Bash(cast call:*)",
+      "WebFetch(domain:entropy-explorer.pyth.network)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:docs.metamask.io)"
     ]
   }
 }

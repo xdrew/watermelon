@@ -6,6 +6,7 @@ import { ConnectWallet } from "@/components/ConnectWallet";
 import { Game } from "@/components/Game";
 import { GameDemo } from "@/components/GameDemo";
 import { Leaderboard } from "@/components/Leaderboard";
+import { CONTRACT_ADDRESS } from "@/lib/contract";
 
 export default function Home() {
   const [isDemo, setIsDemo] = useState(true);
@@ -89,12 +90,12 @@ export default function Home() {
             <span className="px-2 py-1 border border-gray-200 rounded text-gray-500 text-xs">Monad Testnet</span>
             <span className="text-gray-300">|</span>
             <a
-              href="https://testnet.monadexplorer.com/address/0xC9b820C2437eFEa3CDE50Df75C3d8D9E6c5DBDf7"
+              href={`https://testnet.monadexplorer.com/address/${CONTRACT_ADDRESS}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-gray-400 hover:text-gray-600 transition-colors font-mono"
             >
-              0xC9b8...BDf7
+              {CONTRACT_ADDRESS.slice(0, 6)}...{CONTRACT_ADDRESS.slice(-4)}
             </a>
           </p>
           <p className="text-gray-400">

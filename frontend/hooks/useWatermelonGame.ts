@@ -82,12 +82,11 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     functionName: "getSeasonInfo",
   });
 
-  // Read game cost (static, rarely changes - cache indefinitely)
+  // Read game cost (entry fee + VRF fee)
   const { data: gameCost } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getGameCost",
-    query: { staleTime: Infinity },
   });
 
   // Read player's best score for current season
