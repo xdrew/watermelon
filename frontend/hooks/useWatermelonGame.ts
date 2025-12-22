@@ -99,7 +99,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
 
   // Read player's best score for current season (cache for 30s)
   const currentSeason = seasonInfo ? seasonInfo[0] : BigInt(1);
-  const { data: playerBest } = useReadContract({
+  const { data: playerBest, refetch: refetchPlayerBest } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getPlayerSeasonBest",
@@ -249,6 +249,19 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
       refetchGameState();
     }
   }, [isSuccess, refetchGameState]);
+
+  // Refetch best score when game ends (scored or exploded)
+  const prevGameState = useRef<GameState | null>(null);
+  useEffect(() => {
+    const currentState = rawGameState ? parseGameState(rawGameState[6]) : null;
+    const wasActive = prevGameState.current === GameState.ACTIVE;
+    const isNowFinished = currentState === GameState.SCORED || currentState === GameState.EXPLODED;
+
+    if (wasActive && isNowFinished) {
+      refetchPlayerBest();
+    }
+    prevGameState.current = currentState;
+  }, [rawGameState, refetchPlayerBest]);
 
   // Handle errors
   const handleError = useCallback((error: Error) => {

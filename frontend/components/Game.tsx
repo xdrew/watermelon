@@ -90,6 +90,21 @@ export function Game({ onGameEnd }: GameProps) {
 
   const rank = playerRank ? Number(playerRank) : 0;
 
+  // Leaderboard for competitor count
+  const { data: leaderboard } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "getLeaderboard",
+    args: [BigInt(seasonNumber)],
+    query: { enabled: seasonNumber > 0, staleTime: 60000 },
+  });
+
+  const competitorCount = leaderboard
+    ? leaderboard.filter(
+        (e) => e.player !== "0x0000000000000000000000000000000000000000" && e.score > 0n
+      ).length
+    : 0;
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -284,9 +299,12 @@ export function Game({ onGameEnd }: GameProps) {
           Season {seasonNumber} {timeLeft && `• ${timeLeft}`}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-gray-400">Best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
+          {competitorCount > 0 && (
+            <span className="text-gray-400">{competitorCount} playing</span>
+          )}
+          <span className="text-gray-400">Your best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
           {rank > 0 && (
-            <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span>
+            <span className="text-gray-400">Position: <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span></span>
           )}
         </div>
       </div>

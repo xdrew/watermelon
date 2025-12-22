@@ -36,7 +36,7 @@ export function HowToPlay() {
             <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-3 text-center">
               <div className="text-2xl mb-1">🍉</div>
               <div className="text-xs font-medium text-yellow-800">Add Bands</div>
-              <div className="text-[10px] text-yellow-600 mt-1">Push your luck or cash out</div>
+              <div className="text-[10px] text-yellow-600 mt-1">Push your luck or secure the score</div>
             </div>
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-3 text-center">
               <div className="text-2xl mb-1">🏆</div>
