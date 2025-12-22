@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useChainId } from "wagmi";
 import { formatEther } from "viem";
@@ -9,11 +9,19 @@ import {
   GameState,
   formatMultiplier,
   getMultiplierForBands,
+  calculateScore,
+  getDangerLevel,
   SOLO_MAX_THRESHOLD,
+  ENTROPY_PROVIDER,
 } from "@/lib/contract";
 import { useWatermelonGame } from "@/hooks/useWatermelonGame";
+import { useBurnerWallet } from "@/hooks/useBurnerWallet";
 
-export function Game() {
+interface GameProps {
+  onGameEnd?: () => void;
+}
+
+export function Game({ onGameEnd }: GameProps) {
   const { authenticated, ready } = usePrivy();
   const { wallets } = useWallets();
   const activeWallet = wallets[0];
@@ -21,10 +29,17 @@ export function Game() {
   const isConnected = authenticated && !!address;
   const chainId = useChainId();
   const [mounted, setMounted] = useState(false);
+  const [burnerMode, setBurnerMode] = useState(false);
+  const [isSettingUpBurner, setIsSettingUpBurner] = useState(false);
+  const [isStartingGame, setIsStartingGame] = useState(false);
+
+  // Optimistic UI state for instant feedback
+  const [optimisticBands, setOptimisticBands] = useState<number | null>(null);
 
   const {
     gameId,
     status,
+    setStatus,
     isWaitingForVRF,
     isPending,
     isConfirming,
@@ -40,21 +55,159 @@ export function Game() {
     isCancelled,
     isStale,
     dangerLevel,
-    sessionKeySupported,
-    sessionKeyActive,
-    isCreatingSession,
-    sessionRemainingTime,
     startGame,
     addBand,
     cashOut,
     cancelGame,
     resetGame,
     checkStatus,
+    refetchGameState,
+    refetchPlayerGames,
   } = useWatermelonGame(address);
+
+  const burner = useBurnerWallet(address);
+  const prevIsGameOver = useRef(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Trigger onGameEnd when game transitions to over (explosion or score)
+  useEffect(() => {
+    if (isGameOver && !prevIsGameOver.current) {
+      onGameEnd?.();
+    }
+    prevIsGameOver.current = isGameOver;
+  }, [isGameOver, onGameEnd]);
+
+  // Clear isStartingGame only when game actually becomes ACTIVE
+  // This prevents the "Start Game" button from appearing during state transitions
+  useEffect(() => {
+    if (isStartingGame && isGameActive) {
+      setIsStartingGame(false);
+    }
+  }, [isStartingGame, isGameActive]);
+
+
+  // Handle starting game with burner
+  const handleStartGame = useCallback(async () => {
+    setIsSettingUpBurner(true);
+    setStatus?.("Checking session...");
+
+    // Get fresh status
+    const freshStatus = await burner.refreshStatus();
+    if (!freshStatus) {
+      setStatus?.("Failed to check status");
+      setIsSettingUpBurner(false);
+      return;
+    }
+
+    // Check authorization using fresh values
+    if (!freshStatus.isAuthorized) {
+      setStatus?.("Authorizing burner wallet...");
+      const authorized = await burner.authorizeBurner();
+      if (!authorized) {
+        setStatus?.("Authorization failed");
+        setIsSettingUpBurner(false);
+        return;
+      }
+    }
+
+    // Check balance and fund BEFORE trying to start
+    // Need ~0.22 MON but Monad may need higher buffer
+    const minBalance = BigInt(0.5 * 10**18); // 0.5 MON minimum
+    if (freshStatus.balance < minBalance) {
+      setStatus?.("Funding game session...");
+      const funded = await burner.fundBurner();
+      if (!funded) {
+        setStatus?.("Funding failed");
+        setIsSettingUpBurner(false);
+        return;
+      }
+    }
+
+    setIsSettingUpBurner(false);
+    setBurnerMode(true);
+    setIsStartingGame(true);
+    setStatus?.("Starting game...");
+
+    const hash = await burner.startGameWithBurner();
+
+    if (hash) {
+      setStatus?.("Waiting for VRF...");
+      // Transaction is confirmed - immediately refetch player games to pick up new gameId
+      // Note: isStartingGame will be cleared by effect when game becomes ACTIVE
+      await refetchPlayerGames?.();
+    } else {
+      setStatus?.("Failed to start game");
+      setBurnerMode(false);
+      setIsStartingGame(false);
+    }
+  }, [burner, setStatus, refetchPlayerGames]);
+
+  // Handle add band with burner
+  const [isAddingBand, setIsAddingBand] = useState(false);
+  const isAddingBandRef = useRef(false);
+
+  const handleAddBand = useCallback(async () => {
+    if (!gameId || isAddingBandRef.current) return;
+
+    if (burnerMode && burner.isAuthorized) {
+      // Prevent double execution
+      isAddingBandRef.current = true;
+
+      // Optimistic update - show new band count immediately
+      const newBands = gameState.currentBands + 1;
+      setOptimisticBands(newBands);
+      setIsAddingBand(true);
+
+      const hash = await burner.addBandWithBurner(gameId);
+      setIsAddingBand(false);
+      isAddingBandRef.current = false;
+
+      if (hash) {
+        // Wait for refetch to complete BEFORE clearing optimistic state
+        await refetchGameState?.();
+        setOptimisticBands(null);
+      } else {
+        setOptimisticBands(null);
+        setStatus?.("Failed to add band");
+      }
+    } else {
+      addBand();
+    }
+  }, [burnerMode, burner, gameId, gameState.currentBands, addBand, setStatus, refetchGameState]);
+
+  // Handle cash out with burner
+  const [isCashingOut, setIsCashingOut] = useState(false);
+  const isCashingOutRef = useRef(false);
+
+  const handleCashOut = useCallback(async () => {
+    if (!gameId || isCashingOutRef.current) return;
+
+    if (burnerMode && burner.isAuthorized) {
+      // Prevent double execution
+      isCashingOutRef.current = true;
+      setIsCashingOut(true);
+
+      const hash = await burner.cashOutWithBurner(gameId);
+      setIsCashingOut(false);
+      isCashingOutRef.current = false;
+
+      if (hash) {
+        await refetchGameState?.();
+        // Auto-withdraw silently in background (don't override game result display)
+        if (burner.canWithdraw) {
+          burner.withdrawToUser().then(() => burner.refreshStatus());
+        }
+        setBurnerMode(false);
+      } else {
+        setStatus?.("Failed to cash out");
+      }
+    } else {
+      cashOut();
+    }
+  }, [burnerMode, burner, gameId, cashOut, setStatus, refetchGameState]);
 
   if (!mounted || !ready) {
     return (
@@ -82,8 +235,21 @@ export function Game() {
     );
   }
 
-  const isProcessing = isPending || isConfirming || isValidatingGame;
-  const showVRFWaiting = isWaitingForVRF || gameState.currentState === GameState.REQUESTING_VRF;
+  const isProcessing = isPending || isConfirming || isValidatingGame || isSettingUpBurner || isCashingOut || isAddingBand || isStartingGame;
+  const isStartingFlow = isSettingUpBurner || isStartingGame;
+  const showVRFWaiting = isWaitingForVRF || isStartingGame || gameState.currentState === GameState.REQUESTING_VRF;
+
+  // Compute display values - use optimistic state for instant feedback
+  const displayBands = optimisticBands ?? gameState.currentBands;
+  const displayMultiplier = optimisticBands !== null
+    ? getMultiplierForBands(optimisticBands)
+    : gameState.currentMultiplier;
+  const displayScore = optimisticBands !== null
+    ? calculateScore(optimisticBands, displayMultiplier)
+    : gameState.potentialScore;
+  const displayDangerLevel = optimisticBands !== null
+    ? getDangerLevel(optimisticBands)
+    : dangerLevel;
 
   return (
     <div className="max-w-md mx-auto">
@@ -102,18 +268,12 @@ export function Game() {
       {/* Main card */}
       <div className="p-4">
 
-        {/* Session key indicator */}
-        {sessionKeyActive && isGameActive && (
+        {/* Burner mode indicator */}
+        {burnerMode && isGameActive && (
           <div className="flex items-center justify-center gap-1.5 mb-4">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-xs text-green-600 font-medium">Fast Mode</span>
-            <span className="text-xs text-gray-400">({sessionRemainingTime})</span>
-          </div>
-        )}
-        {isCreatingSession && (
-          <div className="flex items-center justify-center gap-1.5 mb-4">
-            <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            <span className="text-xs text-blue-600">Enabling fast mode...</span>
+            <span className="text-xs text-green-600 font-medium">Instant Mode</span>
+            <span className="text-xs text-gray-400">({burner.formattedBalance} MON)</span>
           </div>
         )}
 
@@ -124,16 +284,16 @@ export function Game() {
               isExploded ? 'bg-red-50' : 'bg-green-50'
             } ${
               isWaitingForVRF ? 'animate-pulse' :
-              gameState.currentBands > 20 && !isExploded ? 'animate-[wiggle_0.5s_ease-in-out_infinite]' : ''
+              displayBands > 20 && !isExploded ? 'animate-[wiggle_0.5s_ease-in-out_infinite]' : ''
             }`}
           >
             {isExploded ? '💥' : '🍉'}
           </div>
 
           {/* Band count */}
-          {gameState.currentBands > 0 && !isExploded && (
+          {displayBands > 0 && !isExploded && (
             <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-black text-white text-xs font-medium px-3 py-1 rounded-full">
-              {gameState.currentBands} bands
+              {displayBands} bands
             </div>
           )}
         </div>
@@ -144,22 +304,34 @@ export function Game() {
             <div className="text-center">
               <div className="text-gray-400 text-xs mb-1">Multiplier</div>
               <div className={`text-2xl font-bold ${isExploded ? 'text-red-500' : 'text-black'}`}>
-                {formatMultiplier(gameState.currentMultiplier)}
+                {formatMultiplier(displayMultiplier)}
               </div>
             </div>
             <div className="text-center">
               <div className="text-gray-400 text-xs mb-1">Score</div>
               <div className={`text-2xl font-bold ${isExploded ? 'text-red-500' : 'text-black'}`}>
-                {isExploded ? '0' : isScored ? gameState.finalScore.toString() : gameState.potentialScore.toString()}
+                {isExploded ? '0' : isScored ? gameState.finalScore.toString() : displayScore.toString()}
               </div>
             </div>
           </div>
         )}
 
-        {/* Threshold reveal */}
+        {/* Threshold reveal with VRF verification */}
         {isGameOver && gameState.threshold > 0 && !isCancelled && (
-          <div className={`text-center text-sm mb-6 py-2 rounded-lg ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-            Threshold was {gameState.threshold} bands
+          <div className={`text-center text-sm mb-6 py-3 px-4 rounded-lg ${isExploded ? 'bg-red-50' : 'bg-green-50'}`}>
+            <div className={isExploded ? 'text-red-600' : 'text-green-600'}>
+              Threshold was {gameState.threshold} bands
+            </div>
+            {gameState.vrfSequence > 0n && (
+              <a
+                href={`https://entropy-explorer.pyth.network/?chain=monad-testnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-gray-400 hover:text-gray-600 underline mt-1 inline-block"
+              >
+                Verify on Pyth (seq #{gameState.vrfSequence.toString()})
+              </a>
+            )}
           </div>
         )}
 
@@ -170,8 +342,8 @@ export function Game() {
           </div>
         )}
 
-        {/* Status */}
-        {status && !isGameOver && (
+        {/* Status - hide when setup spinner shows status */}
+        {status && !isGameOver && !isSettingUpBurner && (
           <div className={`text-center text-sm mb-6 ${
             status.startsWith('Error:')
               ? 'text-red-600 bg-red-50 py-2 px-3 rounded-lg'
@@ -182,7 +354,12 @@ export function Game() {
         )}
 
         {/* Controls */}
-        {showVRFWaiting ? (
+        {isSettingUpBurner ? (
+          <div className="text-center py-4">
+            <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+            <p className="text-gray-500 text-sm">{status || "Setting up..."}</p>
+          </div>
+        ) : showVRFWaiting ? (
           <div className="text-center py-4">
             <div className="text-2xl mb-2 animate-bounce">🎲</div>
             <p className="text-gray-500 text-sm">Generating threshold...</p>
@@ -208,21 +385,32 @@ export function Game() {
               <p className="text-xs text-red-500 mt-2">VRF timed out - you can cancel for a refund</p>
             )}
           </div>
+        ) : (gameId && !isGameActive && !isGameOver) || isValidatingGame || isStartingGame ? (
+          // Transitional state - have gameId but not yet ACTIVE, or validating/starting
+          <div className="text-center py-4">
+            <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+            <p className="text-gray-500 text-sm">Loading game...</p>
+          </div>
         ) : !gameId || isGameOver ? (
           <div className="space-y-4">
+            {/* Entry fee */}
             <div className="flex justify-between items-center text-sm">
               <span className="text-gray-500">Entry fee</span>
-              <div className="text-right">
-                <span className="font-medium">{Number(formatEther(cost.entryFee)).toFixed(3)} MON</span>
-                {cost.vrfFee > 0 && (
-                  <div className="text-xs text-gray-400">+ {Number(formatEther(cost.vrfFee)).toFixed(4)} VRF</div>
-                )}
-              </div>
+              <span className="font-medium">{formatEther(cost.entryFee)} MON</span>
             </div>
+
+            {/* Session balance when funded */}
+            {burner.isReady && (
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500">Session balance</span>
+                <span className="font-medium text-green-600">{burner.formattedBalance} MON</span>
+              </div>
+            )}
+
             <button
               onClick={() => {
                 resetGame();
-                startGame();
+                handleStartGame();
               }}
               disabled={isProcessing}
               className="w-full py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
@@ -230,10 +418,20 @@ export function Game() {
               {isProcessing ? (
                 <span className="flex items-center justify-center gap-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  {isValidatingGame ? 'Loading...' : isPending ? 'Confirm in wallet...' : 'Processing...'}
+                  {isSettingUpBurner ? 'Setting up...' : isValidatingGame ? 'Loading...' : isPending ? 'Confirm in wallet...' : 'Processing...'}
                 </span>
               ) : isGameOver ? 'Play Again' : 'Start Game'}
             </button>
+
+            {/* Withdraw option - show amount */}
+            {burner.canWithdraw && (
+              <button
+                onClick={() => burner.withdrawToUser()}
+                className="w-full py-2 text-sm text-gray-500 hover:text-black transition-colors"
+              >
+                Withdraw {burner.formattedBalance} MON
+              </button>
+            )}
           </div>
         ) : isGameActive ? (
           <div className="space-y-4">
@@ -241,16 +439,16 @@ export function Game() {
             <div>
               <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>Risk</span>
-                <span>{dangerLevel}%</span>
+                <span>{displayDangerLevel}%</span>
               </div>
               <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all ${
-                    dangerLevel > 60 ? 'bg-red-500' :
-                    dangerLevel > 30 ? 'bg-yellow-500' :
+                    displayDangerLevel > 60 ? 'bg-red-500' :
+                    displayDangerLevel > 30 ? 'bg-yellow-500' :
                     'bg-green-500'
                   }`}
-                  style={{ width: `${dangerLevel}%` }}
+                  style={{ width: `${displayDangerLevel}%` }}
                 />
               </div>
             </div>
@@ -258,26 +456,26 @@ export function Game() {
             {/* Buttons */}
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={cashOut}
-                disabled={isProcessing || gameState.currentBands === 0}
+                onClick={handleCashOut}
+                disabled={isProcessing || displayBands === 0}
                 className="py-3 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
-                {isPending || isConfirming ? (
-                  <span className="flex items-center justify-center gap-1">
-                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    {isPending ? 'Confirm...' : 'Saving...'}
+                {isCashingOut ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Confirming
                   </span>
                 ) : 'Secure'}
               </button>
               <button
-                onClick={addBand}
+                onClick={handleAddBand}
                 disabled={isProcessing}
                 className="py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
-                {isPending || isConfirming ? (
-                  <span className="flex items-center justify-center gap-1">
-                    <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    {isPending ? 'Confirm...' : 'Adding...'}
+                {isAddingBand ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Adding
                   </span>
                 ) : 'Add Band'}
               </button>

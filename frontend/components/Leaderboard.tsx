@@ -1,7 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useReadContract } from "wagmi";
-import { CONTRACT_ADDRESS, CONTRACT_ABI } from "@/lib/contract";
+import { CONTRACT_ADDRESS, CONTRACT_ABI, formatTimeLeft } from "@/lib/contract";
 
 type LeaderboardEntry = {
   player: string;
@@ -9,7 +10,13 @@ type LeaderboardEntry = {
   gameId: bigint;
 };
 
-export function Leaderboard() {
+interface LeaderboardProps {
+  refreshTrigger?: number;
+}
+
+export function Leaderboard({ refreshTrigger }: LeaderboardProps) {
+  const [timeLeft, setTimeLeft] = useState("");
+
   // Get current season
   const { data: seasonInfo } = useReadContract({
     address: CONTRACT_ADDRESS,
@@ -19,18 +26,41 @@ export function Leaderboard() {
 
   const season = seasonInfo ? seasonInfo[0] : BigInt(1);
   const seasonNumber = Number(season);
+  const endTime = seasonInfo ? Number(seasonInfo[3]) : 0;
+
+  // Update countdown
+  useEffect(() => {
+    if (!endTime) return;
+
+    const updateCountdown = () => {
+      setTimeLeft(formatTimeLeft(endTime));
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 60000);
+
+    return () => clearInterval(interval);
+  }, [endTime]);
 
   // Fetch on-chain leaderboard directly
-  const { data: leaderboard, isLoading } = useReadContract({
+  const { data: leaderboard, isLoading, refetch: refetchLeaderboard } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getLeaderboard",
     args: [season],
     query: {
       enabled: !!season,
-      refetchInterval: 30000, // Refresh every 30 seconds
+      refetchInterval: 60000, // Refresh every 60s to avoid rate limits
+      staleTime: 30000, // Consider data fresh for 30s
     },
   });
+
+  // Refetch when trigger changes (e.g., after game ends)
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      refetchLeaderboard();
+    }
+  }, [refreshTrigger, refetchLeaderboard]);
 
   const entries: LeaderboardEntry[] = (leaderboard as LeaderboardEntry[] | undefined) || [];
 
@@ -39,10 +69,17 @@ export function Leaderboard() {
     (entry) => entry.player !== "0x0000000000000000000000000000000000000000" && entry.score > 0n
   );
 
+  const title = (
+    <div className="flex justify-between items-center mb-2">
+      <h3 className="text-sm font-medium">Season {seasonNumber}</h3>
+      {timeLeft && <span className="text-xs text-gray-400">{timeLeft}</span>}
+    </div>
+  );
+
   if (isLoading) {
     return (
       <div>
-        <h3 className="text-sm font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
+        {title}
         <div className="flex justify-center py-8">
           <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
         </div>
@@ -53,7 +90,7 @@ export function Leaderboard() {
   if (validEntries.length === 0) {
     return (
       <div>
-        <h3 className="text-sm font-medium">Season {seasonNumber} Leaderboard</h3>
+        {title}
         <p className="text-gray-400 text-xs">No scores yet</p>
       </div>
     );
@@ -61,7 +98,7 @@ export function Leaderboard() {
 
   return (
     <div>
-      <h3 className="text-sm font-medium mb-4">Season {seasonNumber} Leaderboard</h3>
+      {title}
       <div className="space-y-2">
         {validEntries.map((entry, index) => (
           <div

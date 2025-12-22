@@ -31,6 +31,7 @@ export interface GameStateData {
   finalScore: bigint;
   threshold: number;
   createdAt: number;
+  vrfSequence: bigint;
 }
 
 export interface SeasonData {
@@ -66,7 +67,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     formattedRemainingTime,
   } = useSessionKey();
 
-  // Read game state
+  // Read game state (no staleTime - needs fresh data)
   const { data: rawGameState, refetch: refetchGameState } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
@@ -75,40 +76,43 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     query: { enabled: !!gameId },
   });
 
-  // Read season info
+  // Read season info (changes rarely - cache for 5 min)
   const { data: seasonInfo } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getSeasonInfo",
+    query: { staleTime: 300000 },
   });
 
-  // Read game cost (entry fee + VRF fee)
+  // Read game cost (static - cache for 10 min)
   const { data: gameCost } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getGameCost",
+    query: { staleTime: 600000 },
   });
 
-  // Read player's best score for current season
+  // Read player's best score for current season (cache for 30s)
   const currentSeason = seasonInfo ? seasonInfo[0] : BigInt(1);
   const { data: playerBest } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getPlayerSeasonBest",
     args: address ? [currentSeason, address] : undefined,
-    query: { enabled: !!address },
+    query: { enabled: !!address, staleTime: 30000 },
   });
 
   // Read player's games to find active game
-  const { data: playerGames } = useReadContract({
+  // staleTime prevents background refetches, but explicit refetchPlayerGames() still works
+  const { data: playerGames, refetch: refetchPlayerGames } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getPlayerGames",
     args: address ? [address] : undefined,
-    query: { enabled: !!address },
+    query: { enabled: !!address, staleTime: 30000 },
   });
 
-  // Check state of candidate game (last game in player's history)
+  // Check state of candidate game (no staleTime - needs fresh)
   const { data: candidateGameState, isLoading: isLoadingCandidateState } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
@@ -141,7 +145,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     }
   }, [playerGames]);
 
-  // Step 2: Check if candidate game is active (REQUESTING_VRF or ACTIVE)
+  // Step 2: Check if candidate game is active or recently finished
   useEffect(() => {
     if (candidateGameId && candidateGameState) {
       const state = parseGameState(candidateGameState[6]);
@@ -151,16 +155,13 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
         setIsWaitingForVRF(false);
         return;
       }
-      if (state === GameState.REQUESTING_VRF || state === GameState.ACTIVE) {
-        // Game is still in progress - use it
-        setGameId(candidateGameId);
-        if (state === GameState.REQUESTING_VRF) {
-          setIsWaitingForVRF(true);
-        }
+      // Always set gameId if we have a candidate - even for finished games
+      // This allows showing the game result (threshold reveal)
+      // User will call resetGame() when they want to start a new game
+      setGameId(candidateGameId);
+      if (state === GameState.REQUESTING_VRF) {
+        setIsWaitingForVRF(true);
       } else {
-        // Game is finished (SCORED, EXPLODED, or CANCELLED) - don't auto-select
-        // Keep gameId as null so user can start a new game
-        setGameId(null);
         setIsWaitingForVRF(false);
       }
     }
@@ -200,12 +201,13 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     },
   });
 
-  // Watch for explosion event (only during active game)
+  // Watch for explosion event (only during active game - not when game over)
+  const gameIsActive = rawGameState ? parseGameState(rawGameState[6]) === GameState.ACTIVE : false;
   useWatchContractEvent({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     eventName: "SoloExploded",
-    enabled: !!gameId,
+    enabled: !!gameId && gameIsActive,
     onLogs(logs) {
       const log = logs[0];
       if (log && gameId && log.args.gameId === gameId) {
@@ -215,12 +217,12 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     },
   });
 
-  // Watch for score event (only during active game)
+  // Watch for score event (only during active game - not when game over)
   useWatchContractEvent({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     eventName: "SoloScored",
-    enabled: !!gameId,
+    enabled: !!gameId && gameIsActive,
     onLogs(logs) {
       const log = logs[0];
       if (log && gameId && log.args.gameId === gameId && log.args.score !== undefined) {
@@ -384,6 +386,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     finalScore: rawGameState ? rawGameState[4] : BigInt(0),
     threshold: rawGameState ? Number(rawGameState[7]) : 0,
     createdAt: rawGameState ? Number(rawGameState[8]) : 0,
+    vrfSequence: rawGameState ? BigInt(rawGameState[9]) : BigInt(0),
   }), [rawGameState]);
 
   // Derived state
@@ -416,13 +419,13 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   // Best score
   const bestScore = playerBest ? playerBest[0] : BigInt(0);
 
-  // Auto-poll while waiting for VRF
+  // Auto-poll while waiting for VRF (less aggressive to avoid 429)
   useEffect(() => {
     if (!isWaitingForVRF && gameState.currentState !== GameState.REQUESTING_VRF) return;
 
     const interval = setInterval(() => {
       refetchGameState();
-    }, 5000); // Reduced from 15s to 5s for better UX
+    }, 10000); // Poll every 10s to avoid rate limits
 
     return () => clearInterval(interval);
   }, [isWaitingForVRF, gameState.currentState, refetchGameState]);
@@ -464,6 +467,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     // State
     gameId,
     status,
+    setStatus,
     isWaitingForVRF,
     isPending,
     isConfirming,
@@ -497,5 +501,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     cancelGame,
     resetGame,
     checkStatus,
+    refetchGameState,
+    refetchPlayerGames,
   };
 }

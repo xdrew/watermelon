@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { Game } from "@/components/Game";
@@ -10,6 +10,11 @@ import { CONTRACT_ADDRESS } from "@/lib/contract";
 
 export default function Home() {
   const [isDemo, setIsDemo] = useState(true);
+  const [leaderboardRefresh, setLeaderboardRefresh] = useState(0);
+
+  const handleGameEnd = useCallback(() => {
+    setLeaderboardRefresh(prev => prev + 1);
+  }, []);
 
   return (
     <main className="min-h-screen">
@@ -75,10 +80,10 @@ export default function Home() {
       <div className="container mx-auto px-4 py-4">
         <div className="flex flex-col lg:flex-row gap-4 justify-center items-start">
           <div className="w-full max-w-md">
-            {isDemo ? <GameDemo /> : <Game />}
+            {isDemo ? <GameDemo /> : <Game onGameEnd={handleGameEnd} />}
           </div>
           <div className="w-full lg:w-80">
-            <Leaderboard />
+            <Leaderboard refreshTrigger={leaderboardRefresh} />
           </div>
         </div>
       </div>

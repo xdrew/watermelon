@@ -1,4 +1,5 @@
-import { http, createConfig } from "wagmi";
+import { http } from "wagmi";
+import { createConfig } from "@privy-io/wagmi";
 import { MONAD_TESTNET } from "./contract";
 
 // Define chain for wagmi

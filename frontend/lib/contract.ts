@@ -1,6 +1,5 @@
-// Contract addresses from environment variables, with fallbacks for development
-const DEFAULT_CONTRACT_ADDRESS = "0x916A1CeB155E35EEE92A067E3F5b8635b461f12A";
-export const CONTRACT_ADDRESS = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || DEFAULT_CONTRACT_ADDRESS) as `0x${string}`;
+// Contract address from environment variable
+export const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`;
 
 // SessionKeyManager for EIP-7702 session keys (optional - set after deploying)
 export const SESSION_MANAGER_ADDRESS = process.env.NEXT_PUBLIC_SESSION_MANAGER_ADDRESS as `0x${string}` | undefined;
@@ -20,6 +19,7 @@ export const CONTRACT_ABI = [
       { name: "state", type: "uint8" },
       { name: "threshold", type: "uint256" },
       { name: "createdAt", type: "uint256" },
+      { name: "vrfSequence", type: "uint64" },
     ],
     stateMutability: "view",
     type: "function",
@@ -191,6 +191,35 @@ export const CONTRACT_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  // Operator (burner wallet) functions
+  {
+    inputs: [{ name: "operator", type: "address" }],
+    name: "authorizeOperator",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "revokeOperator",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "player", type: "address" }],
+    name: "startGameFor",
+    outputs: [{ name: "gameId", type: "uint256" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "user", type: "address" }],
+    name: "authorizedOperator",
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
   // Events
   {
     anonymous: false,
@@ -312,7 +341,7 @@ export const MAX_GAMES_PER_PAGE = 50;
 export const GAS_LIMITS = {
   startGame: 600_000n,      // VRF request + state init (Pyth Entropy v2 needs ~555k)
   addBand: 80_000n,         // State update + event
-  cashOut: 120_000n,        // State update + leaderboard check + event
+  cashOut: 250_000n,        // State update + leaderboard update (can shift entries) + events
   cancelStaleGame: 100_000n, // State cleanup + refund
 } as const;
 
@@ -380,6 +409,9 @@ export function getSurvivalProbability(bands: number): number {
 export function getDangerLevel(bands: number): number {
   return Math.min(100, Math.round((bands / SOLO_MAX_THRESHOLD) * 100));
 }
+
+// Pyth Entropy provider on Monad Testnet
+export const ENTROPY_PROVIDER = "0x825c0390f379c631f3cf11a82a37d20bddf93c07";
 
 export enum GameState {
   REQUESTING_VRF = 0,

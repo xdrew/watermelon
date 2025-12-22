@@ -35,7 +35,9 @@
       "Bash(cast call:*)",
       "WebFetch(domain:entropy-explorer.pyth.network)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:docs.metamask.io)"
+      "WebFetch(domain:docs.metamask.io)",
+      "WebFetch(domain:docs.privy.io)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

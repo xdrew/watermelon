@@ -99,6 +99,9 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     // On-chain leaderboard: season => sorted array of top scores
     mapping(uint256 => LeaderboardEntry[]) public seasonLeaderboard;
 
+    // Operator authorization: user => authorized operator (burner wallet)
+    mapping(address => address) public authorizedOperator;
+
     // ============ EVENTS ============
 
     event SoloGameStarted(
@@ -155,6 +158,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     event SeasonAutoFinalized(uint256 indexed season, address indexed triggeredBy, uint256 callerReward, uint256 totalDistributed);
     event Paused(address indexed by);
     event Unpaused(address indexed by);
+    event OperatorAuthorized(address indexed user, address indexed operator);
+    event OperatorRevoked(address indexed user, address indexed operator);
 
     // ============ ERRORS ============
 
@@ -179,6 +184,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error NoPrizePool();
     error NoWinners();
     error ContractPaused();
+    error NotAuthorizedOperator();
 
     // ============ MODIFIERS ============
 
@@ -282,11 +288,76 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         emit SoloGameStarted(gameId, currentSeason, msg.sender, sequenceNumber);
     }
 
+    /// @notice Authorize an operator (burner wallet) to play on your behalf
+    /// @param operator The operator address to authorize
+    function authorizeOperator(address operator) external {
+        if (operator == address(0)) revert ZeroAddress();
+        authorizedOperator[msg.sender] = operator;
+        emit OperatorAuthorized(msg.sender, operator);
+    }
+
+    /// @notice Revoke operator authorization
+    function revokeOperator() external {
+        address operator = authorizedOperator[msg.sender];
+        if (operator != address(0)) {
+            delete authorizedOperator[msg.sender];
+            emit OperatorRevoked(msg.sender, operator);
+        }
+    }
+
+    /// @notice Start a game on behalf of another user (operator only)
+    /// @param player The user to start the game for
+    /// @return gameId The ID of the created game
+    function startGameFor(address player) external payable whenNotPaused returns (uint256 gameId) {
+        if (authorizedOperator[player] != msg.sender) revert NotAuthorizedOperator();
+
+        // Check for new season
+        _checkAndStartNewSeason();
+
+        // Get VRF fee
+        uint256 vrfFee = entropy.getFeeV2();
+        uint256 totalRequired = entryFee + vrfFee;
+        if (msg.value < totalRequired) revert InsufficientFee();
+
+        // Refund excess
+        if (msg.value > totalRequired) {
+            (bool refundSuccess, ) = msg.sender.call{value: msg.value - totalRequired}("");
+            if (!refundSuccess) revert TransferFailed();
+        }
+
+        // Split entry fee
+        uint256 toPrizePool = (entryFee * PRIZE_POOL_BPS) / BASIS_POINTS;
+        uint256 toProtocol = entryFee - toPrizePool;
+
+        prizePool += toPrizePool;
+        seasonPrizePool[currentSeason] += toPrizePool;
+        protocolBalance += toProtocol;
+
+        gameId = ++soloGameCounter;
+
+        // Request random number from Pyth Entropy v2 with custom callback gas limit
+        uint64 sequenceNumber = entropy.requestV2{value: vrfFee}(CALLBACK_GAS_LIMIT);
+
+        SoloGame storage game = soloGames[gameId];
+        game.player = player; // Game belongs to the user, not the operator
+        game.currentBands = 0;
+        game.currentMultiplier = uint32(BASIS_POINTS);
+        game.state = SoloState.REQUESTING_VRF;
+        game.vrfSequence = sequenceNumber;
+        game.createdAt = uint40(block.timestamp);
+        game.season = uint32(currentSeason);
+
+        vrfRequestToGame[sequenceNumber] = gameId;
+        playerGames[player].push(gameId);
+
+        emit SoloGameStarted(gameId, currentSeason, player, sequenceNumber);
+    }
+
     /// @notice Add a rubber band to the watermelon
     /// @param gameId The game ID
     function addBand(uint256 gameId) external {
         SoloGame storage game = soloGames[gameId];
-        if (game.player != msg.sender) revert NotYourGame();
+        if (!_isPlayerOrOperator(game.player)) revert NotYourGame();
         if (game.state != SoloState.ACTIVE) revert GameNotActive();
 
         game.currentBands++;
@@ -308,7 +379,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     /// @param gameId The game ID
     function cashOut(uint256 gameId) external {
         SoloGame storage game = soloGames[gameId];
-        if (game.player != msg.sender) revert NotYourGame();
+        if (!_isPlayerOrOperator(game.player)) revert NotYourGame();
         if (game.state != SoloState.ACTIVE) revert GameNotActive();
 
         game.state = SoloState.SCORED;
@@ -316,19 +387,20 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (calculatedScore > type(uint32).max) revert ScoreOverflow();
         game.score = uint32(calculatedScore);
 
-        // Update best score if this is a new high
+        // Update best score if this is a new high (use game.player, not msg.sender for operator support)
+        address player = game.player;
         uint256 season = uint256(game.season);
         uint256 score = uint256(game.score);
-        if (score > playerBestScore[season][msg.sender]) {
-            playerBestScore[season][msg.sender] = score;
-            playerBestGameId[season][msg.sender] = gameId;
-            emit NewHighScore(season, msg.sender, score, gameId);
+        if (score > playerBestScore[season][player]) {
+            playerBestScore[season][player] = score;
+            playerBestGameId[season][player] = gameId;
+            emit NewHighScore(season, player, score, gameId);
 
             // Update on-chain leaderboard
-            _updateLeaderboard(season, msg.sender, score, gameId);
+            _updateLeaderboard(season, player, score, gameId);
         }
 
-        emit SoloScored(gameId, season, msg.sender, score, game.currentBands, game.snapThreshold);
+        emit SoloScored(gameId, season, player, score, game.currentBands, game.snapThreshold);
     }
 
     /// @notice Cancel a stale game stuck in REQUESTING_VRF state and refund player
@@ -488,7 +560,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint256 season,
         SoloState state,
         uint256 threshold,
-        uint256 createdAt
+        uint256 createdAt,
+        uint64 vrfSequence
     ) {
         SoloGame storage game = soloGames[gameId];
         player = game.player;
@@ -499,6 +572,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         season = game.season;
         state = game.state;
         createdAt = game.createdAt;
+        vrfSequence = game.vrfSequence;
 
         // Only reveal threshold after game is finished
         if (game.state == SoloState.SCORED || game.state == SoloState.EXPLODED) {
@@ -600,6 +674,13 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     }
 
     // ============ INTERNAL FUNCTIONS ============
+
+    /// @notice Check if caller is the player or their authorized operator
+    /// @param player The player address to check against
+    /// @return True if caller is player or authorized operator
+    function _isPlayerOrOperator(address player) internal view returns (bool) {
+        return msg.sender == player || authorizedOperator[player] == msg.sender;
+    }
 
     /// @notice Check if season has ended and start new one
     /// @dev Auto-distributes prizes for the ended season if not yet finalized
