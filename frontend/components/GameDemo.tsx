@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { DEFAULT_ENTRY_FEE, getDangerLevel, SOLO_MAX_THRESHOLD, getMultiplierForBands, formatMultiplier } from "@/lib/contract";
+import { DEFAULT_ENTRY_FEE, getDangerLevel, SOLO_MAX_THRESHOLD } from "@/lib/contract";
 
-function calculateScore(bands: number): number {
-  // Match contract: score = bands * multiplier (with 4 decimal precision)
-  const multiplierBps = getMultiplierForBands(bands);
-  return Math.floor((bands * Number(multiplierBps)) / 10000);
+function calculateScore(bands: number, threshold: number): number {
+  // Match contract: score = bands² + bands × (16 - threshold)
+  return (bands * bands) + (bands * (16 - threshold));
 }
 
 export function GameDemo() {
@@ -20,8 +19,6 @@ export function GameDemo() {
   const [bestScore, setBestScore] = useState(0);
   const [prizePool, setPrizePool] = useState(0);
 
-  const multiplier = getMultiplierForBands(currentBands);
-  const potentialScore = calculateScore(currentBands);
   const dangerLevel = getDangerLevel(currentBands);
   const isGameActive = gameId !== null && !isExploded && !isScored;
   const isGameOver = isExploded || isScored;
@@ -51,7 +48,7 @@ export function GameDemo() {
   };
 
   const cashOut = () => {
-    const score = potentialScore;
+    const score = calculateScore(currentBands, threshold);
     setIsScored(true);
     setFinalScore(score);
     if (score > bestScore) {
@@ -74,20 +71,14 @@ export function GameDemo() {
 
   return (
     <div className="max-w-md mx-auto">
-      {/* Top stats */}
-      <div className="flex justify-between mb-4 text-sm text-gray-500">
-        <div>
-          <span className="text-gray-400">Best: </span>
-          <span className="font-medium text-black">{bestScore} pts</span>
-        </div>
-        <div>
-          <span className="text-gray-400">Max: </span>
-          <span className="font-medium text-black">{formatMultiplier(getMultiplierForBands(SOLO_MAX_THRESHOLD - 1))}</span>
-        </div>
+      {/* Header row */}
+      <div className="flex justify-between items-center mb-2 px-1 text-xs">
+        <div className="text-gray-400">Demo Mode</div>
+        <div className="text-gray-400">Best: <span className="text-gray-600 font-medium">{bestScore}</span></div>
       </div>
 
       {/* Main card */}
-      <div className="p-4">
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
 
         {/* Watermelon */}
         <div className="relative w-36 h-36 mx-auto mb-6">
@@ -107,28 +98,24 @@ export function GameDemo() {
           )}
         </div>
 
-        {/* Stats */}
-        {(isGameActive || isGameOver) && (
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="text-center">
-              <div className="text-gray-400 text-xs mb-1">Multiplier</div>
-              <div className={`text-2xl font-bold ${isExploded ? 'text-red-500' : 'text-black'}`}>
-                {formatMultiplier(multiplier)}
-              </div>
+        {/* Score display - prominent when game ends */}
+        {isGameOver && (
+          <div className="text-center mb-6">
+            <div className={`text-5xl font-bold ${isExploded ? 'text-red-500' : 'text-green-600'}`}>
+              {isExploded ? '0' : finalScore}
             </div>
-            <div className="text-center">
-              <div className="text-gray-400 text-xs mb-1">Score</div>
-              <div className={`text-2xl font-bold ${isExploded ? 'text-red-500' : 'text-black'}`}>
-                {isExploded ? '0' : isScored ? finalScore : potentialScore}
-              </div>
-            </div>
+            <div className="text-gray-400 text-sm mt-1">points</div>
           </div>
         )}
 
         {/* Threshold reveal */}
         {isGameOver && (
-          <div className={`text-center text-sm mb-6 py-2 rounded-lg ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-            Threshold was {threshold} bands
+          <div className={`text-center text-sm mb-6 py-2 px-3 rounded-lg ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+            {isExploded ? (
+              <>Exploded at {threshold} bands!</>
+            ) : (
+              <>Cashed out! Threshold was {threshold}</>
+            )}
           </div>
         )}
 

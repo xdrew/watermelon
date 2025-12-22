@@ -1,24 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { Game } from "@/components/Game";
 import { GameDemo } from "@/components/GameDemo";
-import { Leaderboard } from "@/components/Leaderboard";
+import { HowToPlay } from "@/components/HowToPlay";
 import { CONTRACT_ADDRESS } from "@/lib/contract";
 
 export default function Home() {
-  const { user } = usePrivy();
-  const userAddress = user?.wallet?.address;
-
   const [isDemo, setIsDemo] = useState(true);
-  const [leaderboardRefresh, setLeaderboardRefresh] = useState(0);
-
-  const handleGameEnd = useCallback(() => {
-    setLeaderboardRefresh(prev => prev + 1);
-  }, []);
 
   return (
     <main className="min-h-screen">
@@ -80,14 +72,16 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Game + Leaderboard */}
+      {/* How to Play */}
+      <div className="container mx-auto px-4">
+        <HowToPlay />
+      </div>
+
+      {/* Game */}
       <div className="container mx-auto px-4 py-4">
-        <div className="flex flex-col lg:flex-row gap-4 justify-center items-start">
-          <div className="w-full max-w-md">
-            {isDemo ? <GameDemo /> : <Game onGameEnd={handleGameEnd} />}
-          </div>
-          <div className="w-full lg:w-80">
-            <Leaderboard refreshTrigger={leaderboardRefresh} userAddress={userAddress} />
+        <div className="flex justify-center">
+          <div className="w-full max-w-sm">
+            {isDemo ? <GameDemo /> : <Game />}
           </div>
         </div>
       </div>

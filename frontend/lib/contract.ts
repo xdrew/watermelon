@@ -32,7 +32,7 @@ export const CONTRACT_ABI = [
     type: "function",
   },
   {
-    inputs: [{ name: "bands", type: "uint256" }, { name: "multiplier", type: "uint256" }],
+    inputs: [{ name: "bands", type: "uint256" }, { name: "threshold", type: "uint256" }],
     name: "calculateScore",
     outputs: [{ name: "score", type: "uint256" }],
     stateMutability: "pure",
@@ -246,7 +246,7 @@ export const CONTRACT_ABI = [
     inputs: [
       { indexed: true, name: "gameId", type: "uint256" },
       { indexed: false, name: "totalBands", type: "uint256" },
-      { indexed: false, name: "currentMultiplier", type: "uint256" },
+      { indexed: false, name: "threshold", type: "uint256" },
       { indexed: false, name: "potentialScore", type: "uint256" },
     ],
     name: "SoloBandAdded",
@@ -395,8 +395,9 @@ export function getMultiplierForBands(bands: number): bigint {
 }
 
 // Client-side score calculation (matches contract calculateScore)
-export function calculateScore(bands: number, multiplier: bigint): bigint {
-  return (BigInt(bands) * multiplier) / 100n;
+// Quadratic formula: score = bands² + bands × (16 - threshold)
+export function calculateScore(bands: number, threshold: number): number {
+  return (bands * bands) + (bands * (16 - threshold));
 }
 
 // Calculate survival probability as percentage

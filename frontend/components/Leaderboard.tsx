@@ -208,20 +208,9 @@ export function Leaderboard({ refreshTrigger, userAddress }: LeaderboardProps) {
         ) : userAddress ? (
           <div className="p-3 bg-gray-50 rounded-lg text-center">
             <p className="text-sm text-gray-500">Not on leaderboard yet</p>
-            <p className="text-xs text-gray-400 mt-1">Score points to compete for prizes!</p>
+            <p className="text-xs text-gray-400 mt-1">Play to compete for prizes!</p>
           </div>
         ) : null}
-
-        {/* Prize tiers hint (no exact scores shown) */}
-        <div className="text-xs text-gray-400 space-y-1">
-          <div>Top 10 win prizes:</div>
-          <div className="grid grid-cols-2 gap-1 pl-2">
-            <span>1st: 40%</span>
-            <span>2nd: 25%</span>
-            <span>3rd: 15%</span>
-            <span>4th-10th: share 20%</span>
-          </div>
-        </div>
       </div>
     </div>
   );

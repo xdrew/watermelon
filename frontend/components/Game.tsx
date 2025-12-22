@@ -2,17 +2,16 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { useChainId } from "wagmi";
+import { useChainId, useReadContract } from "wagmi";
 import { formatEther } from "viem";
 import {
   MONAD_TESTNET,
   GameState,
-  formatMultiplier,
-  getMultiplierForBands,
-  calculateScore,
   getDangerLevel,
   SOLO_MAX_THRESHOLD,
-  ENTROPY_PROVIDER,
+  CONTRACT_ADDRESS,
+  CONTRACT_ABI,
+  formatTimeLeft,
 } from "@/lib/contract";
 import { useWatermelonGame } from "@/hooks/useWatermelonGame";
 import { useBurnerWallet } from "@/hooks/useBurnerWallet";
@@ -67,10 +66,42 @@ export function Game({ onGameEnd }: GameProps) {
 
   const burner = useBurnerWallet(address);
   const prevIsGameOver = useRef(false);
+  const [timeLeft, setTimeLeft] = useState("");
+
+  // Season info
+  const { data: seasonInfo } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "getSeasonInfo",
+  });
+
+  const prizePool = seasonInfo ? seasonInfo[1] : BigInt(0);
+  const endTime = seasonInfo ? Number(seasonInfo[3]) : 0;
+
+  // Player rank - season is an object with { number, prizePool, endTime }
+  const seasonNumber = season?.number || 1;
+  const { data: playerRank } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: CONTRACT_ABI,
+    functionName: "getPlayerRank",
+    args: [BigInt(seasonNumber), address!],
+    query: { enabled: !!address && seasonNumber > 0 },
+  });
+
+  const rank = playerRank ? Number(playerRank) : 0;
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!endTime) return;
+    const update = () => setTimeLeft(formatTimeLeft(endTime));
+    update();
+    const interval = setInterval(update, 60000);
+    return () => clearInterval(interval);
+  }, [endTime]);
 
   // Trigger onGameEnd when game transitions to over (explosion or score)
   useEffect(() => {
@@ -241,32 +272,27 @@ export function Game({ onGameEnd }: GameProps) {
 
   // Compute display values - use optimistic state for instant feedback
   const displayBands = optimisticBands ?? gameState.currentBands;
-  const displayMultiplier = optimisticBands !== null
-    ? getMultiplierForBands(optimisticBands)
-    : gameState.currentMultiplier;
-  const displayScore = optimisticBands !== null
-    ? calculateScore(optimisticBands, displayMultiplier)
-    : gameState.potentialScore;
   const displayDangerLevel = optimisticBands !== null
     ? getDangerLevel(optimisticBands)
     : dangerLevel;
 
   return (
     <div className="max-w-md mx-auto">
-      {/* Top stats */}
-      <div className="flex justify-between mb-4 text-sm text-gray-500">
-        <div>
-          <span className="text-gray-400">Best: </span>
-          <span className="font-medium text-black">{bestScore.toString()} pts</span>
+      {/* Header row */}
+      <div className="flex justify-between items-center mb-2 px-1 text-xs">
+        <div className="text-gray-400">
+          Season {seasonNumber} {timeLeft && `• ${timeLeft}`}
         </div>
-        <div>
-          <span className="text-gray-400">Max: </span>
-          <span className="font-medium text-black">{formatMultiplier(getMultiplierForBands(SOLO_MAX_THRESHOLD - 1))}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-gray-400">Best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
+          {rank > 0 && (
+            <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span>
+          )}
         </div>
       </div>
 
       {/* Main card */}
-      <div className="p-4">
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
 
         {/* Burner mode indicator */}
         {burnerMode && isGameActive && (
@@ -298,21 +324,13 @@ export function Game({ onGameEnd }: GameProps) {
           )}
         </div>
 
-        {/* Stats */}
-        {(isGameActive || isGameOver) && gameState.currentState !== null && (
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="text-center">
-              <div className="text-gray-400 text-xs mb-1">Multiplier</div>
-              <div className={`text-2xl font-bold ${isExploded ? 'text-red-500' : 'text-black'}`}>
-                {formatMultiplier(displayMultiplier)}
-              </div>
+        {/* Score display - prominent when game ends */}
+        {isGameOver && gameState.currentState !== null && (
+          <div className="text-center mb-6">
+            <div className={`text-5xl font-bold ${isExploded ? 'text-red-500' : 'text-green-600'}`}>
+              {isExploded ? '0' : gameState.finalScore.toString()}
             </div>
-            <div className="text-center">
-              <div className="text-gray-400 text-xs mb-1">Score</div>
-              <div className={`text-2xl font-bold ${isExploded ? 'text-red-500' : 'text-black'}`}>
-                {isExploded ? '0' : isScored ? gameState.finalScore.toString() : displayScore.toString()}
-              </div>
-            </div>
+            <div className="text-gray-400 text-sm mt-1">points</div>
           </div>
         )}
 
@@ -320,7 +338,11 @@ export function Game({ onGameEnd }: GameProps) {
         {isGameOver && gameState.threshold > 0 && !isCancelled && (
           <div className={`text-center text-sm mb-6 py-3 px-4 rounded-lg ${isExploded ? 'bg-red-50' : 'bg-green-50'}`}>
             <div className={isExploded ? 'text-red-600' : 'text-green-600'}>
-              Threshold was {gameState.threshold} bands
+              {isExploded ? (
+                <>Exploded at {gameState.threshold} bands!</>
+              ) : (
+                <>Cashed out! Threshold was {gameState.threshold}</>
+              )}
             </div>
             {gameState.vrfSequence > 0n && (
               <a

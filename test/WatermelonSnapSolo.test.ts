@@ -11,9 +11,9 @@ describe("WatermelonSnapSolo", function () {
   let player2: SignerWithAddress;
   let recipient: SignerWithAddress;
 
-  const ENTROPY_PROVIDER = "0x6CC14824Ea2918f5De5C2f75A9Da968ad4BD6344";
   const ENTRY_FEE = ethers.parseEther("0.01");
   const BASIS_POINTS = 10000n;
+  const ENTROPY_PROVIDER = ethers.ZeroAddress; // Unused in V2 API, kept for backward compat
 
   beforeEach(async function () {
     [owner, player, player2, recipient] = await ethers.getSigners();
@@ -23,11 +23,10 @@ describe("WatermelonSnapSolo", function () {
     mockEntropy = await MockEntropy.deploy();
     await mockEntropy.waitForDeployment();
 
-    // Deploy WatermelonSnapSolo
+    // Deploy WatermelonSnapSolo (V2 API - no provider address needed)
     const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
     contract = await WatermelonSnapSolo.deploy(
       await mockEntropy.getAddress(),
-      ENTROPY_PROVIDER,
       ENTRY_FEE
     );
     await contract.waitForDeployment();
@@ -46,7 +45,7 @@ describe("WatermelonSnapSolo", function () {
     it("Should reject zero addresses", async function () {
       const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
       await expect(
-        WatermelonSnapSolo.deploy(ethers.ZeroAddress, ENTROPY_PROVIDER, ENTRY_FEE)
+        WatermelonSnapSolo.deploy(ethers.ZeroAddress, ENTRY_FEE)
       ).to.be.revertedWithCustomError(contract, "ZeroAddress");
     });
 
@@ -54,11 +53,11 @@ describe("WatermelonSnapSolo", function () {
       const WatermelonSnapSolo = await ethers.getContractFactory("WatermelonSnapSolo");
       // Too low
       await expect(
-        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ENTROPY_PROVIDER, ethers.parseEther("0.0001"))
+        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ethers.parseEther("0.0001"))
       ).to.be.revertedWithCustomError(contract, "InvalidEntryFee");
       // Too high
       await expect(
-        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ENTROPY_PROVIDER, ethers.parseEther("11"))
+        WatermelonSnapSolo.deploy(await mockEntropy.getAddress(), ethers.parseEther("11"))
       ).to.be.revertedWithCustomError(contract, "InvalidEntryFee");
     });
   });
@@ -88,14 +87,28 @@ describe("WatermelonSnapSolo", function () {
   });
 
   describe("Score Calculation", function () {
-    it("Should calculate score correctly", async function () {
-      // Score = bands * multiplier / 100
-      // 10 bands at 1.28x = 10 * 12801 / 100 = 1280
-      expect(await contract.calculateScore(10, 12801n)).to.equal(1280n);
+    it("Should calculate score correctly with quadratic formula", async function () {
+      // Quadratic formula: score = bands² + bands × (16 - threshold)
+      // 10 bands with threshold 6: 100 + 10×10 = 200
+      expect(await contract.calculateScore(10, 6)).to.equal(200n);
+      // 5 bands with threshold 3 (hard): 25 + 5×13 = 90
+      expect(await contract.calculateScore(5, 3)).to.equal(90n);
+      // 14 bands with threshold 15 (easy): 196 + 14×1 = 210
+      expect(await contract.calculateScore(14, 15)).to.equal(210n);
+      // 2 bands with threshold 3 (hard): 4 + 2×13 = 30
+      expect(await contract.calculateScore(2, 3)).to.equal(30n);
     });
 
     it("Should return 0 for 0 bands", async function () {
-      expect(await contract.calculateScore(0, 10000n)).to.equal(0n);
+      // 0 bands always = 0 score regardless of threshold
+      expect(await contract.calculateScore(0, 10)).to.equal(0n);
+    });
+
+    it("Should reward more bands over lucky threshold", async function () {
+      // 14 bands easy should beat 2 bands hard
+      const easyGame = await contract.calculateScore(14, 15); // 210
+      const hardGame = await contract.calculateScore(2, 3);   // 30
+      expect(easyGame).to.be.greaterThan(hardGame);
     });
   });
 

@@ -126,7 +126,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     event SoloBandAdded(
         uint256 indexed gameId,
         uint256 totalBands,
-        uint256 currentMultiplier,
+        uint256 threshold,
         uint256 potentialScore
     );
 
@@ -397,8 +397,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
             emit SoloExploded(gameId, uint256(game.season), msg.sender, game.currentBands, game.snapThreshold);
         } else {
-            uint256 potentialScore = calculateScore(game.currentBands, game.currentMultiplier);
-            emit SoloBandAdded(gameId, game.currentBands, game.currentMultiplier, potentialScore);
+            uint256 potentialScore = calculateScore(game.currentBands, game.snapThreshold);
+            emit SoloBandAdded(gameId, game.currentBands, game.snapThreshold, potentialScore);
         }
     }
 
@@ -410,7 +410,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (game.state != SoloState.ACTIVE) revert GameNotActive();
 
         game.state = SoloState.SCORED;
-        uint256 calculatedScore = calculateScore(game.currentBands, game.currentMultiplier);
+        uint256 calculatedScore = calculateScore(game.currentBands, game.snapThreshold);
         if (calculatedScore > type(uint32).max) revert ScoreOverflow();
         game.score = uint32(calculatedScore);
 
@@ -572,14 +572,17 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
     // ============ VIEW FUNCTIONS ============
 
-    /// @notice Calculate score for given bands and multiplier
-    /// @param bands Number of bands
-    /// @param multiplier Multiplier in basis points
-    /// @return score The calculated score (bands * multiplier / 100)
-    function calculateScore(uint256 bands, uint256 multiplier) public pure returns (uint256 score) {
-        // Score = bands × (multiplier / 10000) × 100 for nicer numbers
-        // Simplified: bands × multiplier / 100
-        score = (bands * multiplier) / 100;
+    /// @notice Calculate score based on bands and threshold difficulty
+    /// @param bands Number of bands placed
+    /// @param threshold The snap threshold (lower = harder)
+    /// @return score The calculated score: bands² + bands × (16 - threshold)
+    function calculateScore(uint256 bands, uint256 threshold) public pure returns (uint256 score) {
+        // Quadratic scoring: bands² + bands × (16 - threshold)
+        // More bands = exponentially higher score (primary factor)
+        // Lower threshold = bonus per band (secondary factor)
+        // Examples: 14 bands easy (th=15) = 196+14 = 210
+        //           2 bands hard (th=3) = 4+26 = 30
+        score = (bands * bands) + (bands * (16 - threshold));
     }
 
     /// @notice Calculate multiplier for a given number of bands (15% exponential growth)
@@ -615,7 +618,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         player = game.player;
         currentBands = game.currentBands;
         currentMultiplier = game.currentMultiplier;
-        potentialScore = calculateScore(game.currentBands, game.currentMultiplier);
+        potentialScore = calculateScore(game.currentBands, game.snapThreshold);
         score = game.score;
         season = game.season;
         state = game.state;
