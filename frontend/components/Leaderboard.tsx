@@ -23,26 +23,27 @@ const PRIZE_SHARES_BPS = [4000, 2500, 1500, 800, 500, 140, 140, 140, 140, 140];
 const CALLER_REWARD_BPS = 100; // 1%
 const BASIS_POINTS = 10000;
 
-// Calculate payouts based on actual number of winners (last winner gets remainder)
+// Calculate payouts proportionally based on actual number of winners
+// This ensures 1st always gets more than 2nd, etc. regardless of winner count
 function calculatePayouts(prizePool: bigint, winnersCount: number): bigint[] {
   if (prizePool === BigInt(0) || winnersCount === 0) return [];
 
   // Deduct 1% caller reward first
   const distributablePool = (prizePool * BigInt(BASIS_POINTS - CALLER_REWARD_BPS)) / BigInt(BASIS_POINTS);
 
-  const payouts: bigint[] = [];
-  let usedShares = 0;
+  // Calculate total shares for actual winners
+  const actualWinners = Math.min(winnersCount, 10);
+  let totalShares = 0;
+  for (let i = 0; i < actualWinners; i++) {
+    totalShares += PRIZE_SHARES_BPS[i];
+  }
 
-  for (let i = 0; i < winnersCount && i < 10; i++) {
-    let share: number;
-    if (i === winnersCount - 1 && winnersCount < 10) {
-      // Last winner gets remaining shares
-      share = BASIS_POINTS - usedShares;
-    } else {
-      share = PRIZE_SHARES_BPS[i];
-    }
-    usedShares += PRIZE_SHARES_BPS[i];
-    payouts.push((distributablePool * BigInt(share)) / BigInt(BASIS_POINTS));
+  // Distribute proportionally: each winner gets (originalShare / totalShares) of pool
+  // Example with 2 winners: 1st gets 40/65 = 61.5%, 2nd gets 25/65 = 38.5%
+  const payouts: bigint[] = [];
+  for (let i = 0; i < actualWinners; i++) {
+    const prize = (distributablePool * BigInt(PRIZE_SHARES_BPS[i])) / BigInt(totalShares);
+    payouts.push(prize);
   }
 
   return payouts;

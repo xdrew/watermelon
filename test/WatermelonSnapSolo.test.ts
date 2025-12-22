@@ -670,7 +670,7 @@ describe("WatermelonSnapSolo", function () {
       ).to.be.revertedWithCustomError(contract, "SeasonAlreadyFinalized");
     });
 
-    it("Should distribute correct shares to multiple winners", async function () {
+    it("Should distribute correct shares to multiple winners (proportional)", async function () {
       const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
 
       // Player 1: 5 bands
@@ -703,14 +703,38 @@ describe("WatermelonSnapSolo", function () {
       const player1After = await ethers.provider.getBalance(player.address);
       const player2After = await ethers.provider.getBalance(player2.address);
 
-      // With 2 winners: #1 gets 40%, #2 gets remaining 60% (since fewer than 10 winners)
-      // After 1% caller reward
+      // With 2 winners: proportional distribution
+      // Total shares = 40% + 25% = 65% (6500 BPS)
+      // 1st gets 40/65 = 61.5%, 2nd gets 25/65 = 38.5%
       const distributable = (seasonPool * 99n) / 100n;
-      const expectedP2Prize = (distributable * 4000n) / 10000n; // 40% for 1st
-      const expectedP1Prize = (distributable * 6000n) / 10000n; // Remaining 60% for 2nd
+      const totalShares = 4000n + 2500n; // 6500
+      const expectedP2Prize = (distributable * 4000n) / totalShares; // 1st place
+      const expectedP1Prize = (distributable * 2500n) / totalShares; // 2nd place
 
       expect(player2After - player2Before).to.be.closeTo(expectedP2Prize, ethers.parseEther("0.001"));
       expect(player1After - player1Before).to.be.closeTo(expectedP1Prize, ethers.parseEther("0.001"));
+    });
+
+    it("Should distribute 100% to single winner", async function () {
+      const vrfFee = await mockEntropy.getFee(ENTROPY_PROVIDER);
+
+      await contract.connect(player).startGame({ value: ENTRY_FEE + vrfFee });
+      await mockEntropy.fulfillRequest(await contract.getAddress(), 1, 15);
+      await contract.connect(player).addBand(1);
+      await contract.connect(player).cashOut(1);
+
+      const seasonPool = await contract.seasonPrizePool(1);
+
+      await ethers.provider.send("evm_increaseTime", [24 * 60 * 60 + 1]);
+      await ethers.provider.send("evm_mine", []);
+
+      const playerBefore = await ethers.provider.getBalance(player.address);
+      await contract.connect(recipient).finalizeSeason(1);
+      const playerAfter = await ethers.provider.getBalance(player.address);
+
+      // Single winner gets 100% (after 1% caller reward)
+      const distributable = (seasonPool * 99n) / 100n;
+      expect(playerAfter - playerBefore).to.be.closeTo(distributable, ethers.parseEther("0.001"));
     });
   });
 

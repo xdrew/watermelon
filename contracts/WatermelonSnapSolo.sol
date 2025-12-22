@@ -832,27 +832,25 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
         uint256 totalAllocated = 0;
         uint256 winnersCount = leaderboard.length;
+        if (winnersCount > LEADERBOARD_SIZE) winnersCount = LEADERBOARD_SIZE;
 
-        // Distribute prizes - try push first, fallback to pull if transfer fails
-        for (uint256 i = 0; i < winnersCount && i < LEADERBOARD_SIZE; i++) {
+        // Calculate total shares for actual winners (for proportional distribution)
+        // This ensures 1st always gets more than 2nd, etc. regardless of winner count
+        uint256 totalShares = 0;
+        for (uint256 i = 0; i < winnersCount; i++) {
+            if (leaderboard[i].player != address(0)) {
+                totalShares += PRIZE_SHARES[i];
+            }
+        }
+
+        // Distribute prizes proportionally - try push first, fallback to pull if transfer fails
+        for (uint256 i = 0; i < winnersCount; i++) {
             address winner = leaderboard[i].player;
             if (winner == address(0)) continue;
 
-            // Calculate prize: (distributable pool * share) / 10000
-            // If fewer than 10 winners, remaining shares go to last winner
-            uint256 share;
-            if (i == winnersCount - 1 && winnersCount < LEADERBOARD_SIZE) {
-                // Last winner gets remaining shares
-                uint256 usedShares = 0;
-                for (uint256 j = 0; j < i; j++) {
-                    usedShares += PRIZE_SHARES[j];
-                }
-                share = BASIS_POINTS - usedShares;
-            } else {
-                share = PRIZE_SHARES[i];
-            }
-
-            uint256 prize = (distributablePool * share) / BASIS_POINTS;
+            // Calculate prize proportionally: (pool * originalShare) / totalShares
+            // Example with 2 winners: 1st gets 40/65 = 61.5%, 2nd gets 25/65 = 38.5%
+            uint256 prize = (distributablePool * PRIZE_SHARES[i]) / totalShares;
             if (prize > 0) {
                 totalAllocated += prize;
                 // Try direct transfer first (works for most wallets)

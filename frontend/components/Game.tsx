@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { useChainId, useReadContract } from "wagmi";
+import { useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { formatEther } from "viem";
 import {
   MONAD_TESTNET,
@@ -77,9 +77,41 @@ export function Game({ onGameEnd }: GameProps) {
 
   const prizePool = seasonInfo ? seasonInfo[1] : BigInt(0);
   const endTime = seasonInfo ? Number(seasonInfo[3]) : 0;
+  const isSeasonFinalized = seasonInfo ? seasonInfo[4] : false;
+  const isSeasonEnded = endTime > 0 && Date.now() / 1000 > endTime;
 
   // Player rank - season is an object with { number, prizePool, endTime }
   const seasonNumber = season?.number || 1;
+  const canTriggerPayouts = isSeasonEnded && !isSeasonFinalized && prizePool > 0n;
+
+  // Finalize season transaction
+  const { writeContract: writeFinalize, data: finalizeTxHash, isPending: isFinalizePending } = useWriteContract();
+  const { isLoading: isFinalizeConfirming, isSuccess: isFinalizeSuccess } = useWaitForTransactionReceipt({ hash: finalizeTxHash });
+  const [finalizeStatus, setFinalizeStatus] = useState("");
+
+  const triggerPayouts = useCallback(() => {
+    setFinalizeStatus("Triggering payouts...");
+    writeFinalize(
+      {
+        address: CONTRACT_ADDRESS,
+        abi: CONTRACT_ABI,
+        functionName: "finalizeSeason",
+        args: [BigInt(seasonNumber)],
+      },
+      {
+        onSuccess: () => setFinalizeStatus("Confirming..."),
+        onError: (err) => setFinalizeStatus(`Error: ${err.message.slice(0, 50)}`),
+      }
+    );
+  }, [writeFinalize, seasonNumber]);
+
+  // Clear status on success
+  useEffect(() => {
+    if (isFinalizeSuccess) {
+      setFinalizeStatus("Payouts distributed! You earned 1% reward.");
+      setTimeout(() => setFinalizeStatus(""), 5000);
+    }
+  }, [isFinalizeSuccess]);
   const { data: playerRank } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
@@ -295,8 +327,21 @@ export function Game({ onGameEnd }: GameProps) {
     <div className="max-w-md mx-auto">
       {/* Header row */}
       <div className="flex justify-between items-center mb-2 px-1 text-xs">
-        <div className="text-gray-400">
-          Season {seasonNumber} {timeLeft && `• ${timeLeft}`}
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400">Season {seasonNumber}</span>
+          {canTriggerPayouts ? (
+            <button
+              onClick={triggerPayouts}
+              disabled={isFinalizePending || isFinalizeConfirming}
+              className="px-2 py-0.5 bg-green-500 text-white rounded-full text-[10px] font-medium hover:bg-green-600 disabled:bg-gray-300 transition-colors"
+            >
+              {isFinalizePending || isFinalizeConfirming ? "..." : "Trigger Payouts"}
+            </button>
+          ) : isSeasonFinalized ? (
+            <span className="text-green-600 font-medium">Finalized</span>
+          ) : timeLeft ? (
+            <span className="text-gray-400">• {timeLeft}</span>
+          ) : null}
         </div>
         <div className="flex items-center gap-3">
           {competitorCount > 0 && (
@@ -308,6 +353,11 @@ export function Game({ onGameEnd }: GameProps) {
           )}
         </div>
       </div>
+      {finalizeStatus && (
+        <div className={`text-center text-xs mb-2 py-1 px-2 rounded ${finalizeStatus.startsWith('Error') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+          {finalizeStatus}
+        </div>
+      )}
 
       {/* Main card */}
       <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">

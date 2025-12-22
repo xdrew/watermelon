@@ -220,6 +220,29 @@ export const CONTRACT_ABI = [
     stateMutability: "view",
     type: "function",
   },
+  // Season finalization (anyone can trigger after season ends, gets 1% reward)
+  {
+    inputs: [{ name: "season", type: "uint256" }],
+    name: "finalizeSeason",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  // Prize claiming (if direct transfer failed during distribution)
+  {
+    inputs: [],
+    name: "claimPrize",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ name: "user", type: "address" }],
+    name: "pendingPrizes",
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
   // Events
   {
     anonymous: false,
