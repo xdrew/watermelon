@@ -37,7 +37,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:docs.metamask.io)",
       "WebFetch(domain:docs.privy.io)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

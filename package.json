@@ -22,7 +22,8 @@
   "homepage": "https://github.com/xdrew/watermelon#readme",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
-    "hardhat": "^2.27.2"
+    "hardhat": "^2.27.2",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "dotenv": "^17.2.3"

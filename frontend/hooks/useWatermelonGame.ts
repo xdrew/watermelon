@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   useReadContract,
   useWriteContract,
@@ -46,11 +46,16 @@ export interface CostData {
   total: bigint;
 }
 
+// VRF polling timeout - stop after 5 minutes
+const VRF_TIMEOUT_MS = 5 * 60 * 1000;
+
 export function useWatermelonGame(address: `0x${string}` | undefined) {
   const [gameId, setGameId] = useState<bigint | null>(null);
   const [candidateGameId, setCandidateGameId] = useState<bigint | null>(null);
   const [status, setStatus] = useState<string>("");
   const [isWaitingForVRF, setIsWaitingForVRF] = useState(false);
+  const [vrfTimedOut, setVrfTimedOut] = useState(false);
+  const vrfWaitStartRef = useRef<number | null>(null);
 
   // Get chain-specific gas prices
   const chainId = useChainId();
@@ -161,8 +166,14 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
       setGameId(candidateGameId);
       if (state === GameState.REQUESTING_VRF) {
         setIsWaitingForVRF(true);
+        // Track when VRF waiting started for timeout
+        if (vrfWaitStartRef.current === null) {
+          vrfWaitStartRef.current = Date.now();
+        }
       } else {
         setIsWaitingForVRF(false);
+        vrfWaitStartRef.current = null;
+        setVrfTimedOut(false);
       }
     }
   }, [candidateGameId, candidateGameState]);
@@ -369,6 +380,8 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   const resetGame = useCallback(() => {
     setGameId(null);
     setStatus("");
+    setVrfTimedOut(false);
+    vrfWaitStartRef.current = null;
   }, []);
 
   const checkStatus = useCallback(() => {
@@ -420,10 +433,21 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
   const bestScore = playerBest ? playerBest[0] : BigInt(0);
 
   // Auto-poll while waiting for VRF (less aggressive to avoid 429)
+  // Stops after VRF_TIMEOUT_MS to prevent infinite polling
   useEffect(() => {
     if (!isWaitingForVRF && gameState.currentState !== GameState.REQUESTING_VRF) return;
 
     const interval = setInterval(() => {
+      // Check for timeout
+      if (vrfWaitStartRef.current !== null) {
+        const elapsed = Date.now() - vrfWaitStartRef.current;
+        if (elapsed > VRF_TIMEOUT_MS) {
+          setVrfTimedOut(true);
+          setStatus("VRF timeout - you can cancel for a refund");
+          clearInterval(interval);
+          return;
+        }
+      }
       refetchGameState();
     }, 10000); // Poll every 10s to avoid rate limits
 
@@ -486,6 +510,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     isScored,
     isCancelled,
     isStale,
+    vrfTimedOut,
     dangerLevel,
 
     // Session key state (EIP-7702)
