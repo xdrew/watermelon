@@ -407,6 +407,18 @@ export function Game({ onGameEnd }: GameProps) {
               </div>
             )}
 
+            {/* Security warnings */}
+            {burner.hasOtherTabs && (
+              <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700">
+                Multiple tabs detected - transactions may conflict
+              </div>
+            )}
+            {burner.hasExcessiveBalance && (
+              <div className="p-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700">
+                Balance exceeds {burner.maxSafeBalance} MON - consider withdrawing excess
+              </div>
+            )}
+
             <button
               onClick={() => {
                 resetGame();

@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
+import { usePrivy } from "@privy-io/react-auth";
 import { ConnectWallet } from "@/components/ConnectWallet";
 import { Game } from "@/components/Game";
 import { GameDemo } from "@/components/GameDemo";
@@ -9,6 +10,9 @@ import { Leaderboard } from "@/components/Leaderboard";
 import { CONTRACT_ADDRESS } from "@/lib/contract";
 
 export default function Home() {
+  const { user } = usePrivy();
+  const userAddress = user?.wallet?.address;
+
   const [isDemo, setIsDemo] = useState(true);
   const [leaderboardRefresh, setLeaderboardRefresh] = useState(0);
 
@@ -83,7 +87,7 @@ export default function Home() {
             {isDemo ? <GameDemo /> : <Game onGameEnd={handleGameEnd} />}
           </div>
           <div className="w-full lg:w-80">
-            <Leaderboard refreshTrigger={leaderboardRefresh} />
+            <Leaderboard refreshTrigger={leaderboardRefresh} userAddress={userAddress} />
           </div>
         </div>
       </div>

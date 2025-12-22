@@ -102,6 +102,13 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     // Operator authorization: user => authorized operator (burner wallet)
     mapping(address => address) public authorizedOperator;
 
+    // Operator spending limits: user => remaining allowance (in wei)
+    // 0 means unlimited (default for backwards compatibility)
+    mapping(address => uint256) public operatorAllowance;
+
+    // Pull-over-push: pending prize claims (protects against griefing)
+    mapping(address => uint256) public pendingPrizes;
+
     // ============ EVENTS ============
 
     event SoloGameStarted(
@@ -160,6 +167,9 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     event Unpaused(address indexed by);
     event OperatorAuthorized(address indexed user, address indexed operator);
     event OperatorRevoked(address indexed user, address indexed operator);
+    event OperatorAllowanceSet(address indexed user, uint256 allowance);
+    event PrizeAllocated(address indexed winner, uint256 amount);
+    event PrizeClaimed(address indexed winner, uint256 amount);
 
     // ============ ERRORS ============
 
@@ -185,6 +195,8 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     error NoWinners();
     error ContractPaused();
     error NotAuthorizedOperator();
+    error NoPrizeToClaim();
+    error InsufficientOperatorAllowance();
 
     // ============ MODIFIERS ============
 
@@ -296,11 +308,19 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         emit OperatorAuthorized(msg.sender, operator);
     }
 
+    /// @notice Set spending allowance for operator (0 = unlimited)
+    /// @param allowance Maximum amount operator can spend (in wei)
+    function setOperatorAllowance(uint256 allowance) external {
+        operatorAllowance[msg.sender] = allowance;
+        emit OperatorAllowanceSet(msg.sender, allowance);
+    }
+
     /// @notice Revoke operator authorization
     function revokeOperator() external {
         address operator = authorizedOperator[msg.sender];
         if (operator != address(0)) {
             delete authorizedOperator[msg.sender];
+            delete operatorAllowance[msg.sender];
             emit OperatorRevoked(msg.sender, operator);
         }
     }
@@ -318,6 +338,13 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint256 vrfFee = entropy.getFeeV2();
         uint256 totalRequired = entryFee + vrfFee;
         if (msg.value < totalRequired) revert InsufficientFee();
+
+        // Check and deduct operator allowance (0 means unlimited)
+        uint256 allowance = operatorAllowance[player];
+        if (allowance > 0) {
+            if (allowance < totalRequired) revert InsufficientOperatorAllowance();
+            operatorAllowance[player] = allowance - totalRequired;
+        }
 
         // Refund excess
         if (msg.value > totalRequired) {
@@ -387,11 +414,12 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         if (calculatedScore > type(uint32).max) revert ScoreOverflow();
         game.score = uint32(calculatedScore);
 
-        // Update best score if this is a new high (use game.player, not msg.sender for operator support)
+        // Update best score if this matches or beats personal best
+        // Using >= allows players to reclaim leaderboard position by matching their score
         address player = game.player;
         uint256 season = uint256(game.season);
         uint256 score = uint256(game.score);
-        if (score > playerBestScore[season][player]) {
+        if (score >= playerBestScore[season][player]) {
             playerBestScore[season][player] = score;
             playerBestGameId[season][player] = gameId;
             emit NewHighScore(season, player, score, gameId);
@@ -450,6 +478,10 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         // Caller validation done by _entropyCallback in IEntropyConsumer
 
         uint256 gameId = vrfRequestToGame[sequenceNumber];
+
+        // Validate gameId exists (games start at 1, so 0 means no game)
+        if (gameId == 0) return; // Silently ignore - don't revert in callback
+
         SoloGame storage game = soloGames[gameId];
 
         if (game.state != SoloState.REQUESTING_VRF) revert GameNotRequestingVRF();
@@ -481,7 +513,21 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         _autoDistributePrizes(season, msg.sender);
     }
 
+    /// @notice Claim pending prize winnings (pull pattern)
+    function claimPrize() external nonReentrant {
+        uint256 amount = pendingPrizes[msg.sender];
+        if (amount == 0) revert NoPrizeToClaim();
+
+        pendingPrizes[msg.sender] = 0;
+
+        (bool success, ) = msg.sender.call{value: amount}("");
+        if (!success) revert TransferFailed();
+
+        emit PrizeClaimed(msg.sender, amount);
+    }
+
     /// @notice Distribute prizes to winners (called by owner with verified data)
+    /// @dev Uses pull pattern - prizes go to pendingPrizes mapping
     /// @param season The season to distribute prizes for
     /// @param winners Array of winner addresses (in order: 1st, 2nd, 3rd, etc.)
     /// @param amounts Array of prize amounts for each winner
@@ -496,30 +542,32 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         }
         if (winners.length != amounts.length || winners.length == 0) revert InvalidWinners();
 
-        uint256 totalDistributed = 0;
+        uint256 totalAllocated = 0;
         for (uint256 i = 0; i < amounts.length; i++) {
-            totalDistributed += amounts[i];
+            totalAllocated += amounts[i];
         }
 
         uint256 availablePrize = seasonPrizePool[season];
-        if (totalDistributed > availablePrize) revert InsufficientBalance();
+        if (totalAllocated > availablePrize) revert InsufficientBalance();
 
         seasonFinalized[season] = true;
 
         // Deduct from prize pool
-        prizePool -= totalDistributed;
+        prizePool -= totalAllocated;
 
-        // Distribute to winners
+        // Try push first, fallback to pull if transfer fails
         for (uint256 i = 0; i < winners.length; i++) {
             if (winners[i] == address(0)) continue;
 
             (bool success, ) = winners[i].call{value: amounts[i]}("");
-            if (!success) revert TransferFailed();
-
+            if (!success) {
+                pendingPrizes[winners[i]] += amounts[i];
+                emit PrizeAllocated(winners[i], amounts[i]);
+            }
             emit PrizeDistributed(season, winners[i], i + 1, amounts[i]);
         }
 
-        emit SeasonFinalized(season, totalDistributed);
+        emit SeasonFinalized(season, totalAllocated);
     }
 
     // ============ VIEW FUNCTIONS ============
@@ -733,9 +781,10 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         }
 
         // Find insertion position (sorted descending by score)
+        // Tie-break: last player wins (>= instead of >)
         uint256 insertPos = leaderboard.length;
         for (uint256 i = 0; i < leaderboard.length; i++) {
-            if (score > leaderboard[i].score) {
+            if (score >= leaderboard[i].score) {
                 insertPos = i;
                 break;
             }
@@ -765,7 +814,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         }
     }
 
-    /// @notice Auto-distribute prizes based on leaderboard
+    /// @notice Auto-distribute prizes based on leaderboard (pull pattern)
     /// @param season The season to distribute
     /// @param caller The address that triggered distribution (receives reward)
     function _autoDistributePrizes(uint256 season, address caller) internal {
@@ -778,10 +827,10 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
         seasonFinalized[season] = true;
 
-        uint256 totalDistributed = 0;
+        uint256 totalAllocated = 0;
         uint256 winnersCount = leaderboard.length;
 
-        // Distribute to each winner based on their rank
+        // Distribute prizes - try push first, fallback to pull if transfer fails
         for (uint256 i = 0; i < winnersCount && i < LEADERBOARD_SIZE; i++) {
             address winner = leaderboard[i].player;
             if (winner == address(0)) continue;
@@ -802,24 +851,32 @@ contract WatermelonSnapSolo is IEntropyConsumer {
 
             uint256 prize = (distributablePool * share) / BASIS_POINTS;
             if (prize > 0) {
-                totalDistributed += prize;
+                totalAllocated += prize;
+                // Try direct transfer first (works for most wallets)
                 (bool success, ) = winner.call{value: prize}("");
-                if (!success) revert TransferFailed();
+                if (!success) {
+                    // Fallback to pending claim if transfer fails (contract wallets, etc)
+                    pendingPrizes[winner] += prize;
+                    emit PrizeAllocated(winner, prize);
+                }
                 emit PrizeDistributed(season, winner, i + 1, prize);
             }
         }
 
-        // Pay caller reward
+        // Pay caller reward immediately (caller triggered this, so they're responsive)
         if (callerReward > 0 && caller != address(0)) {
-            totalDistributed += callerReward;
+            totalAllocated += callerReward;
             (bool success, ) = caller.call{value: callerReward}("");
-            if (!success) revert TransferFailed();
+            if (!success) {
+                // If caller transfer fails, add to pending prizes instead
+                pendingPrizes[caller] += callerReward;
+            }
         }
 
         // Deduct from prize pool
-        prizePool -= totalDistributed;
+        prizePool -= totalAllocated;
 
-        emit SeasonAutoFinalized(season, caller, callerReward, totalDistributed);
+        emit SeasonAutoFinalized(season, caller, callerReward, totalAllocated);
     }
 
     // ============ ADMIN FUNCTIONS ============
