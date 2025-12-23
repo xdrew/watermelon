@@ -341,11 +341,16 @@ export function Game({ onGameEnd }: GameProps) {
         ) : timeLeft ? (
           <span>{timeLeft}</span>
         ) : null}
-        <span className="text-gray-300">|</span>
-        {competitorCount > 0 && <span>{competitorCount} playing</span>}
-        <span>Best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
-        {rank > 0 && (
-          <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span>
+        {/* Only show active stats when season is not finalized */}
+        {!isSeasonFinalized && (
+          <>
+            <span className="text-gray-300">|</span>
+            {competitorCount > 0 && <span>{competitorCount} playing</span>}
+            <span>Best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
+            {rank > 0 && (
+              <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span>
+            )}
+          </>
         )}
       </div>
 
