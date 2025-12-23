@@ -25,6 +25,11 @@ body {
   50% { transform: rotate(1deg); }
 }
 
+@keyframes wiggle-intense {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
 @keyframes bounce-dice {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-12px); }

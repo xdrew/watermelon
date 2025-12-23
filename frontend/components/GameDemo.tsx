@@ -79,10 +79,11 @@ export function GameDemo() {
       </div>
 
       {/* HERO: Watermelon */}
-      <div className="relative w-72 h-72 md:w-80 md:h-80 mx-auto z-0">
+      <div className="relative w-72 h-72 md:w-80 md:h-80 mx-auto z-0 overflow-hidden">
         <div
           className={`w-full h-full flex items-center justify-center transition-all ${
-            currentBands > 10 && !isExploded ? 'animate-[wiggle_0.3s_ease-in-out_infinite]' : ''
+            currentBands >= 10 && !isExploded ? 'animate-[wiggle-intense_0.15s_ease-in-out_infinite]' :
+            currentBands >= 5 && !isExploded ? 'animate-[wiggle_0.3s_ease-in-out_infinite]' : ''
           }`}
         >
           <img
