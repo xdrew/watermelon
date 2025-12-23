@@ -56,18 +56,18 @@ export function ConnectWallet() {
 
   if (authenticated && address) {
     return (
-      <div className="flex items-center gap-3">
-        <div className="text-sm text-right">
-          <div className="text-gray-500 text-xs">
-            {address.slice(0, 6)}...{address.slice(-4)}
+      <div className="flex items-center gap-2 sm:gap-3">
+        <div className="text-right">
+          <div className="text-gray-500 text-[10px] sm:text-xs">
+            {address.slice(0, 4)}...{address.slice(-4)}
           </div>
-          <div className="font-medium">
-            {balance ? Number(formatEther(balance.value)).toFixed(4) : "0"} MON
+          <div className="font-medium text-xs sm:text-sm">
+            {balance ? Number(formatEther(balance.value)).toFixed(2) : "0"} MON
           </div>
         </div>
         <button
           onClick={logout}
-          className="px-3 py-1.5 border border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 rounded-lg text-xs transition-colors"
+          className="px-2 py-1 sm:px-3 sm:py-1.5 border border-gray-200 text-gray-500 hover:border-gray-300 hover:text-gray-700 rounded-lg text-[10px] sm:text-xs transition-colors"
         >
           Disconnect
         </button>

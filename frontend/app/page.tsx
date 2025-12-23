@@ -15,7 +15,52 @@ export default function Home() {
     <main className="min-h-screen flex flex-col overflow-x-hidden">
       {/* Header */}
       <header className="container mx-auto px-4 py-3 relative z-50">
-        <div className="relative flex justify-between items-start">
+        {/* Mobile: stacked layout */}
+        <div className="flex flex-col gap-2 sm:hidden">
+          {/* Row 1: Logo + Toggle */}
+          <div className="flex items-center justify-between">
+            <h1 className="text-lg font-bold flex items-center gap-1.5">
+              <span className="text-xl">🍉</span>
+              <span>Watermelon Snap</span>
+            </h1>
+            <div className="inline-flex border border-gray-200 rounded-full p-0.5">
+              <button
+                onClick={() => setIsDemo(true)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                  isDemo ? "bg-black text-white" : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                Demo
+              </button>
+              <button
+                onClick={() => setIsDemo(false)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                  !isDemo ? "bg-black text-white" : "text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                Live
+              </button>
+            </div>
+          </div>
+          {/* Row 2: How to Play + Wallet */}
+          <div className="flex items-center justify-between">
+            <HowToPlay />
+            {!isDemo && (
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/history"
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  History
+                </Link>
+                <ConnectWallet />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop: three-column grid layout */}
+        <div className="hidden sm:grid grid-cols-3 items-start">
           {/* Left: Logo + How to Play */}
           <div className="flex flex-col">
             <h1 className="text-xl md:text-2xl font-bold flex items-center gap-2">
@@ -25,8 +70,8 @@ export default function Home() {
             <HowToPlay />
           </div>
 
-          {/* Center: Mode Toggle - absolute to stay perfectly centered */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-0">
+          {/* Center: Mode Toggle */}
+          <div className="flex justify-center">
             <div className="inline-flex border border-gray-200 rounded-full p-0.5">
               <button
                 onClick={() => setIsDemo(true)}
@@ -48,7 +93,7 @@ export default function Home() {
           </div>
 
           {/* Right: History + Connect */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center justify-end gap-3">
             {!isDemo && (
               <>
                 <Link
@@ -71,7 +116,7 @@ export default function Home() {
 
       {/* Footer - minimal */}
       <footer className="container mx-auto px-4 py-4">
-        <div className="flex items-center justify-center gap-3 text-xs text-gray-400">
+        <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] sm:text-xs text-gray-400">
           <span>Daily prizes</span>
           <span>•</span>
           <span>Top 10 win</span>
