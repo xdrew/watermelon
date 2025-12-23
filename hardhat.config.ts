@@ -28,6 +28,26 @@ const config: HardhatUserConfig = {
       chainId: 143,
     },
   },
+  etherscan: {
+    apiKey: {
+      monadTestnet: process.env.ETHERSCAN_API_KEY || "empty",
+    },
+    customChains: [
+      {
+        network: "monadTestnet",
+        chainId: 10143,
+        urls: {
+          apiURL: "https://api.etherscan.io/v2/api?chainid=10143",
+          browserURL: "https://testnet.monadscan.com",
+        },
+      },
+    ],
+  },
+  sourcify: {
+    enabled: true,
+    apiUrl: "https://sourcify-api-monad.blockvision.org",
+    browserUrl: "https://testnet.monadvision.com",
+  },
   paths: {
     sources: "./contracts",
     tests: "./test",
