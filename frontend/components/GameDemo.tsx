@@ -70,72 +70,70 @@ export function GameDemo() {
   };
 
   return (
-    <div className="max-w-md mx-auto">
-      {/* Header row */}
-      <div className="flex justify-between items-center mb-2 px-1 text-xs">
-        <div className="text-gray-400">Demo Mode</div>
-        <div className="text-gray-400">Best: <span className="text-gray-600 font-medium">{bestScore}</span></div>
+    <div className="flex flex-col items-center">
+      {/* Stats bar */}
+      <div className="flex items-center gap-4 text-xs text-gray-400">
+        <span>Demo Mode</span>
+        <span className="text-gray-300">|</span>
+        <span>Best: <span className="text-gray-600 font-medium">{bestScore}</span></span>
       </div>
 
-      {/* Main card */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-
-        {/* Watermelon */}
-        <div className="relative w-36 h-36 mx-auto mb-6">
-          <div
-            className={`w-full h-full rounded-full flex items-center justify-center text-6xl transition-all ${
-              isExploded ? 'bg-red-50' : 'bg-green-50'
-            } ${currentBands > 20 && !isExploded ? 'animate-[wiggle_0.5s_ease-in-out_infinite]' : ''}`}
-          >
-            {isExploded ? '💥' : '🍉'}
-          </div>
-
-          {/* Band count */}
-          {currentBands > 0 && !isExploded && (
-            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-black text-white text-xs font-medium px-3 py-1 rounded-full">
-              {currentBands} bands
-            </div>
-          )}
+      {/* HERO: Watermelon */}
+      <div className="relative w-72 h-72 md:w-80 md:h-80 mx-auto z-0">
+        <div
+          className={`w-full h-full flex items-center justify-center transition-all ${
+            currentBands > 10 && !isExploded ? 'animate-[wiggle_0.3s_ease-in-out_infinite]' : ''
+          }`}
+        >
+          <img
+            src={isExploded ? '/wm-explode.png' : '/wm.png'}
+            alt={isExploded ? 'Exploded watermelon' : 'Watermelon'}
+            className="w-full h-full object-contain"
+          />
         </div>
 
-        {/* Score display - prominent when game ends */}
-        {isGameOver && (
-          <div className="text-center mb-6">
-            <div className={`text-5xl font-bold ${isExploded ? 'text-red-500' : 'text-green-600'}`}>
-              {isExploded ? '0' : finalScore}
-            </div>
-            <div className="text-gray-400 text-sm mt-1">points</div>
+        {/* Band count badge - hide when game is over */}
+        {currentBands > 0 && !isExploded && !isGameOver && (
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-black text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-lg">
+            {currentBands} bands
           </div>
         )}
+      </div>
 
-        {/* Threshold reveal */}
-        {isGameOver && (
-          <div className={`text-center text-sm mb-6 py-2 px-3 rounded-lg ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-            {isExploded ? (
-              <>Exploded at {threshold} bands!</>
-            ) : (
-              <>Cashed out! Threshold was {threshold}</>
-            )}
+      {/* Score display when game ends */}
+      {isGameOver && (
+        <div className="text-center mb-4 -mt-14 relative z-10">
+          <div className={`text-6xl font-black ${isExploded ? 'text-red-500' : 'text-green-500'}`}>
+            {isExploded ? '0' : finalScore}
           </div>
-        )}
+          <div className="text-gray-400 text-sm mt-1">points</div>
+        </div>
+      )}
 
-        {/* Status */}
-        {status && !isGameOver && (
-          <div className="text-center text-sm text-gray-500 mb-6">
-            {status}
-          </div>
-        )}
+      {/* Threshold reveal */}
+      {isGameOver && (
+        <div className={`text-center text-sm mb-6 py-2 px-6 rounded-full ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+          {isExploded ? `Exploded at ${threshold} bands!` : `Threshold was ${threshold}`}
+        </div>
+      )}
 
-        {/* Controls */}
+      {/* Status */}
+      {status && !isGameOver && (
+        <div className="text-center text-sm text-gray-400 mb-4">
+          {status}
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="w-full max-w-xs">
         {!gameId || isGameOver ? (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-500">Entry fee</span>
-              <span className="font-medium">{DEFAULT_ENTRY_FEE} MON</span>
+          <div className="space-y-3">
+            <div className="flex justify-center items-center gap-4 text-sm text-gray-400">
+              <span>Entry: {DEFAULT_ENTRY_FEE} MON</span>
             </div>
             <button
-              onClick={isGameOver ? resetGame : startGame}
-              className="w-full py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-800 transition-colors"
+              onClick={isGameOver ? () => { resetGame(); startGame(); } : startGame}
+              className="w-full py-3 bg-black text-white rounded-full font-medium hover:bg-gray-800 transition-colors"
             >
               {isGameOver ? 'Play Again' : 'Start Game'}
             </button>
@@ -143,12 +141,12 @@ export function GameDemo() {
         ) : isGameActive ? (
           <div className="space-y-4">
             {/* Risk bar */}
-            <div>
+            <div className="w-full">
               <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>Risk</span>
                 <span>{dangerLevel}%</span>
               </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all ${
                     dangerLevel > 60 ? 'bg-red-500' :
@@ -160,18 +158,18 @@ export function GameDemo() {
               </div>
             </div>
 
-            {/* Buttons */}
+            {/* Action buttons */}
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={cashOut}
                 disabled={currentBands === 0}
-                className="py-3 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                className="py-3 bg-green-500 text-white rounded-full font-medium hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
                 Secure
               </button>
               <button
                 onClick={addBand}
-                className="py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-800 transition-colors"
+                className="py-3 bg-black text-white rounded-full font-medium hover:bg-gray-800 transition-colors"
               >
                 Add Band
               </button>
@@ -179,7 +177,6 @@ export function GameDemo() {
           </div>
         ) : null}
       </div>
-
     </div>
   );
 }

@@ -324,212 +324,164 @@ export function Game({ onGameEnd }: GameProps) {
     : dangerLevel;
 
   return (
-    <div className="max-w-md mx-auto">
-      {/* Header row */}
-      <div className="flex justify-between items-center mb-2 px-1 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-400">Season {seasonNumber}</span>
-          {canTriggerPayouts ? (
-            <button
-              onClick={triggerPayouts}
-              disabled={isFinalizePending || isFinalizeConfirming}
-              className="px-2 py-0.5 bg-green-500 text-white rounded-full text-[10px] font-medium hover:bg-green-600 disabled:bg-gray-300 transition-colors"
-            >
-              {isFinalizePending || isFinalizeConfirming ? "..." : "Trigger Payouts"}
-            </button>
-          ) : isSeasonFinalized ? (
-            <span className="text-green-600 font-medium">Finalized</span>
-          ) : timeLeft ? (
-            <span className="text-gray-400">• {timeLeft}</span>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-3">
-          {competitorCount > 0 && (
-            <span className="text-gray-400">{competitorCount} playing</span>
-          )}
-          <span className="text-gray-400">Your best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
-          {rank > 0 && (
-            <span className="text-gray-400">Position: <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span></span>
-          )}
-        </div>
+    <div className="flex flex-col items-center">
+      {/* Stats bar */}
+      <div className="flex items-center gap-4 text-xs text-gray-400">
+        <span>Season {seasonNumber}</span>
+        {canTriggerPayouts ? (
+          <button
+            onClick={triggerPayouts}
+            disabled={isFinalizePending || isFinalizeConfirming}
+            className="px-2 py-0.5 bg-green-500 text-white rounded-full text-[10px] font-medium hover:bg-green-600 disabled:bg-gray-300"
+          >
+            {isFinalizePending || isFinalizeConfirming ? "..." : "Trigger Payouts"}
+          </button>
+        ) : isSeasonFinalized ? (
+          <span className="text-green-600 font-medium">Finalized</span>
+        ) : timeLeft ? (
+          <span>{timeLeft}</span>
+        ) : null}
+        <span className="text-gray-300">|</span>
+        {competitorCount > 0 && <span>{competitorCount} playing</span>}
+        <span>Best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
+        {rank > 0 && (
+          <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span>
+        )}
       </div>
+
       {finalizeStatus && (
-        <div className={`text-center text-xs mb-2 py-1 px-2 rounded ${finalizeStatus.startsWith('Error') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+        <div className={`text-center text-xs mb-4 py-1 px-3 rounded-full ${finalizeStatus.startsWith('Error') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
           {finalizeStatus}
         </div>
       )}
 
-      {/* Main card */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm">
-
-        {/* Burner mode indicator */}
-        {burnerMode && isGameActive && (
-          <div className="flex items-center justify-center gap-1.5 mb-4">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-xs text-green-600 font-medium">Instant Mode</span>
-            <span className="text-xs text-gray-400">({burner.formattedBalance} MON)</span>
-          </div>
-        )}
-
-        {/* Watermelon */}
-        <div className="relative w-36 h-36 mx-auto mb-6">
-          <div
-            className={`w-full h-full rounded-full flex items-center justify-center text-6xl transition-all ${
-              isExploded ? 'bg-red-50' : 'bg-green-50'
-            } ${
-              isWaitingForVRF ? 'animate-pulse' :
-              displayBands > 20 && !isExploded ? 'animate-[wiggle_0.5s_ease-in-out_infinite]' : ''
-            }`}
-          >
-            {isExploded ? '💥' : '🍉'}
-          </div>
-
-          {/* Band count */}
-          {displayBands > 0 && !isExploded && (
-            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-black text-white text-xs font-medium px-3 py-1 rounded-full">
-              {displayBands} bands
-            </div>
-          )}
+      {/* HERO: Watermelon */}
+      <div className="relative w-72 h-72 md:w-80 md:h-80 mx-auto z-0">
+        <div
+          className={`w-full h-full flex items-center justify-center transition-all ${
+            isWaitingForVRF ? 'animate-pulse' :
+            displayBands > 10 && !isExploded ? 'animate-[wiggle_0.3s_ease-in-out_infinite]' : ''
+          }`}
+        >
+          <img
+            src={isExploded ? '/wm-explode.png' : '/wm.png'}
+            alt={isExploded ? 'Exploded watermelon' : 'Watermelon'}
+            className="w-full h-full object-contain"
+          />
         </div>
 
-        {/* Score display - prominent when game ends */}
-        {isGameOver && gameState.currentState !== null && (
-          <div className="text-center mb-6">
-            <div className={`text-5xl font-bold ${isExploded ? 'text-red-500' : 'text-green-600'}`}>
-              {isExploded ? '0' : gameState.finalScore.toString()}
-            </div>
-            <div className="text-gray-400 text-sm mt-1">points</div>
+        {/* Band count badge - hide when game is over */}
+        {displayBands > 0 && !isExploded && !isGameOver && (
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-black text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-lg">
+            {displayBands} bands
           </div>
         )}
+      </div>
 
-        {/* Threshold reveal with VRF verification */}
-        {isGameOver && gameState.threshold > 0 && !isCancelled && (
-          <div className={`text-center text-sm mb-6 py-3 px-4 rounded-lg ${isExploded ? 'bg-red-50' : 'bg-green-50'}`}>
-            <div className={isExploded ? 'text-red-600' : 'text-green-600'}>
-              {isExploded ? (
-                <>Exploded at {gameState.threshold} bands!</>
-              ) : (
-                <>Cashed out! Threshold was {gameState.threshold}</>
-              )}
-            </div>
-            {gameState.vrfSequence > 0n && (
-              <a
-                href={`https://entropy-explorer.pyth.network/?chain=monad-testnet`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-gray-400 hover:text-gray-600 underline mt-1 inline-block"
-              >
-                Verify on Pyth (seq #{gameState.vrfSequence.toString()})
-              </a>
-            )}
+      {/* Score display when game ends */}
+      {isGameOver && gameState.currentState !== null && (
+        <div className="text-center mb-4 -mt-14 relative z-10">
+          <div className={`text-6xl font-black ${isExploded ? 'text-red-500' : 'text-green-500'}`}>
+            {isExploded ? '0' : gameState.finalScore.toString()}
           </div>
-        )}
+          <div className="text-gray-400 text-sm mt-1">points</div>
+        </div>
+      )}
 
-        {/* Cancelled game message */}
-        {isCancelled && (
-          <div className="text-center text-sm mb-6 py-2 rounded-lg bg-gray-50 text-gray-600">
-            Game cancelled - entry fee refunded
-          </div>
-        )}
+      {/* Threshold reveal */}
+      {isGameOver && gameState.threshold > 0 && !isCancelled && (
+        <div className={`text-center text-sm mb-6 py-2 px-6 rounded-full ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+          {isExploded ? `Exploded at ${gameState.threshold} bands!` : `Threshold was ${gameState.threshold}`}
+          {gameState.vrfSequence > 0n && (
+            <a
+              href={`https://entropy-explorer.pyth.network/?chain=monad-testnet&sequence=${gameState.vrfSequence.toString()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-gray-400 hover:text-gray-600 underline ml-2"
+            >
+              Verify #{gameState.vrfSequence.toString()}
+            </a>
+          )}
+        </div>
+      )}
 
-        {/* Status - hide when setup spinner shows status */}
-        {status && !isGameOver && !isSettingUpBurner && (
-          <div className={`text-center text-sm mb-6 ${
-            status.startsWith('Error:')
-              ? 'text-red-600 bg-red-50 py-2 px-3 rounded-lg'
-              : 'text-gray-500'
-          }`}>
-            {status}
-          </div>
-        )}
+      {/* Cancelled message */}
+      {isCancelled && (
+        <div className="text-center text-sm mb-6 py-2 px-4 rounded-full bg-gray-100 text-gray-600">
+          Game cancelled - fee refunded
+        </div>
+      )}
 
-        {/* Controls */}
+      {/* Status */}
+      {status && !isGameOver && !isSettingUpBurner && (
+        <div className={`text-center text-sm mb-4 ${
+          status.startsWith('Error:') ? 'text-red-600' : 'text-gray-400'
+        }`}>
+          {status}
+        </div>
+      )}
+
+      {/* Burner mode indicator */}
+      {burnerMode && isGameActive && (
+        <div className="flex items-center gap-1.5 mb-4 text-xs">
+          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+          <span className="text-green-600 font-medium">Instant Mode</span>
+          <span className="text-gray-400">({burner.formattedBalance} MON)</span>
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="w-full max-w-xs">
         {isSettingUpBurner ? (
           <div className="text-center py-4">
             <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-gray-500 text-sm">{status || "Setting up..."}</p>
+            <p className="text-gray-400 text-sm">{status || "Setting up..."}</p>
           </div>
         ) : showVRFWaiting ? (
           <div className="text-center py-4">
-            <div className="text-2xl mb-2 animate-bounce">🎲</div>
-            <p className="text-gray-500 text-sm">Generating threshold...</p>
-            <p className="text-xs text-gray-400 mt-1">Pyth Entropy VRF</p>
-            <div className="flex gap-2 justify-center mt-4">
-              <button
-                onClick={checkStatus}
-                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50 transition-colors"
-              >
-                Check Status
-              </button>
-              {isStale && (
+            <div className="text-4xl mb-3 animate-[bounce-dice_1s_ease-in-out_infinite]">🎲</div>
+            <p className="text-gray-400 text-sm">Generating threshold...</p>
+            {isStale && (
+              <div className="mt-3">
+                <p className="text-xs text-red-500 mb-2">VRF timed out</p>
                 <button
                   onClick={cancelGame}
                   disabled={isProcessing}
-                  className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                  className="px-4 py-2 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 disabled:bg-gray-200"
                 >
                   Cancel & Refund
                 </button>
-              )}
-            </div>
-            {isStale && (
-              <p className="text-xs text-red-500 mt-2">VRF timed out - you can cancel for a refund</p>
+              </div>
             )}
           </div>
         ) : (gameId && !isGameActive && !isGameOver) || isValidatingGame || isStartingGame ? (
-          // Transitional state - have gameId but not yet ACTIVE, or validating/starting
           <div className="text-center py-4">
             <div className="w-8 h-8 border-2 border-black border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-gray-500 text-sm">Loading game...</p>
+            <p className="text-gray-400 text-sm">Loading...</p>
           </div>
         ) : !gameId || isGameOver ? (
-          <div className="space-y-4">
-            {/* Entry fee */}
-            <div className="flex justify-between items-center text-sm">
-              <span className="text-gray-500">Entry fee</span>
-              <span className="font-medium">{formatEther(cost.entryFee)} MON</span>
+          <div className="space-y-3">
+            <div className="flex justify-center items-center gap-4 text-sm text-gray-400">
+              <span>Entry: {formatEther(cost.entryFee)} MON</span>
+              {burner.isReady && <span className="text-green-600">Session: {burner.formattedBalance}</span>}
             </div>
 
-            {/* Session balance when funded */}
-            {burner.isReady && (
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-500">Session balance</span>
-                <span className="font-medium text-green-600">{burner.formattedBalance} MON</span>
-              </div>
-            )}
-
-            {/* Security warnings */}
             {burner.hasOtherTabs && (
-              <div className="p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700">
-                Multiple tabs detected - transactions may conflict
-              </div>
-            )}
-            {burner.hasExcessiveBalance && (
-              <div className="p-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700">
-                Balance exceeds {burner.maxSafeBalance} MON - consider withdrawing excess
-              </div>
+              <div className="text-center text-xs text-yellow-600">Multiple tabs detected</div>
             )}
 
             <button
-              onClick={() => {
-                resetGame();
-                handleStartGame();
-              }}
+              onClick={() => { resetGame(); handleStartGame(); }}
               disabled={isProcessing}
-              className="w-full py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+              className="w-full py-3 bg-black text-white rounded-full font-medium hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
             >
-              {isProcessing ? (
-                <span className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  {isSettingUpBurner ? 'Setting up...' : isValidatingGame ? 'Loading...' : isPending ? 'Confirm in wallet...' : 'Processing...'}
-                </span>
-              ) : isGameOver ? 'Play Again' : 'Start Game'}
+              {isProcessing ? 'Processing...' : isGameOver ? 'Play Again' : 'Start Game'}
             </button>
 
-            {/* Withdraw option - show amount */}
             {burner.canWithdraw && (
               <button
                 onClick={() => burner.withdrawToUser()}
-                className="w-full py-2 text-sm text-gray-500 hover:text-black transition-colors"
+                className="w-full py-2 text-sm text-gray-400 hover:text-gray-600"
               >
                 Withdraw {burner.formattedBalance} MON
               </button>
@@ -538,12 +490,12 @@ export function Game({ onGameEnd }: GameProps) {
         ) : isGameActive ? (
           <div className="space-y-4">
             {/* Risk bar */}
-            <div>
+            <div className="w-full">
               <div className="flex justify-between text-xs text-gray-400 mb-1">
                 <span>Risk</span>
                 <span>{displayDangerLevel}%</span>
               </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all ${
                     displayDangerLevel > 60 ? 'bg-red-500' :
@@ -555,37 +507,26 @@ export function Game({ onGameEnd }: GameProps) {
               </div>
             </div>
 
-            {/* Buttons */}
+            {/* Action buttons */}
             <div className="grid grid-cols-2 gap-3">
               <button
                 onClick={handleCashOut}
                 disabled={isProcessing || displayBands === 0}
-                className="py-3 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                className="py-3 bg-green-500 text-white rounded-full font-medium hover:bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
-                {isCashingOut ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Confirming
-                  </span>
-                ) : 'Secure'}
+                {isCashingOut ? '...' : 'Secure'}
               </button>
               <button
                 onClick={handleAddBand}
                 disabled={isProcessing}
-                className="py-3 bg-black text-white rounded-xl font-medium hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
+                className="py-3 bg-black text-white rounded-full font-medium hover:bg-gray-800 disabled:bg-gray-200 disabled:text-gray-400 transition-colors"
               >
-                {isAddingBand ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Adding
-                  </span>
-                ) : 'Add Band'}
+                {isAddingBand ? '...' : 'Add Band'}
               </button>
             </div>
           </div>
         ) : null}
       </div>
-
     </div>
   );
 }

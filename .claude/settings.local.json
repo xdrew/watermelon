@@ -39,7 +39,8 @@
       "WebFetch(domain:docs.privy.io)",
       "Bash(npx tsc:*)",
       "Bash(npm uninstall:*)",
-      "Bash(CONTRACT_ADDRESS=0x917d74ce1f0610b5fb1a0efbc10ed42e1f6aeec6 npx hardhat run:*)"
+      "Bash(CONTRACT_ADDRESS=0x917d74ce1f0610b5fb1a0efbc10ed42e1f6aeec6 npx hardhat run:*)",
+      "Bash(mv:*)"
     ]
   }
 }

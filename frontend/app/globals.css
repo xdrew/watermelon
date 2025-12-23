@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
+  --background: #ffffff;
   --foreground: #111111;
 }
 
@@ -17,9 +17,24 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
   min-height: 100vh;
+  scrollbar-gutter: stable;
 }
 
 @keyframes wiggle {
   0%, 100% { transform: rotate(-1deg); }
   50% { transform: rotate(1deg); }
+}
+
+@keyframes bounce-dice {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+/* Interactive elements cursor */
+button, a, [role="button"] {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
 }
