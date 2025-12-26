@@ -346,6 +346,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
           setStatus("Score recorded!");
           setTimeout(() => {
             refetchGameState();
+            refetchPlayerBest();
           }, 1000);
           return;
         }
@@ -366,7 +367,7 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
       },
       { onError: handleError }
     );
-  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState, gasPrice]);
+  }, [gameId, writeContract, handleError, sessionKeyActive, isValidForGame, executeWithSession, refetchGameState, refetchPlayerBest, gasPrice]);
 
   const cancelGame = useCallback(() => {
     if (!gameId) return;
@@ -541,5 +542,6 @@ export function useWatermelonGame(address: `0x${string}` | undefined) {
     checkStatus,
     refetchGameState,
     refetchPlayerGames,
+    refetchPlayerBest,
   };
 }

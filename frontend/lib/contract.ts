@@ -346,6 +346,22 @@ export const MONAD_TESTNET = {
   },
 } as const;
 
+export const MONAD_MAINNET = {
+  id: 143,
+  name: "Monad",
+  nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.monad.xyz"] },
+  },
+  blockExplorers: {
+    default: { name: "MonadVision", url: "https://monadvision.com" },
+  },
+} as const;
+
+// Use NEXT_PUBLIC_NETWORK=mainnet for mainnet, defaults to testnet
+const isMainnet = process.env.NEXT_PUBLIC_NETWORK === "mainnet";
+export const MONAD_CHAIN = isMainnet ? MONAD_MAINNET : MONAD_TESTNET;
+
 // Game constants - must match contract values
 // Default entry fee for display before contract is loaded
 // Actual fee is read from contract via getGameCost()
@@ -364,7 +380,7 @@ export const MAX_GAMES_PER_PAGE = 50;
 export const GAS_LIMITS = {
   startGame: 600_000n,      // VRF request + state init (Pyth Entropy v2 needs ~555k)
   addBand: 80_000n,         // State update + event
-  cashOut: 250_000n,        // State update + leaderboard update (can shift entries) + events
+  cashOut: 300_000n,        // State update + leaderboard update (optimized: single pass, in-place updates)
   cancelStaleGame: 100_000n, // State cleanup + refund
 } as const;
 
@@ -386,7 +402,7 @@ const MAINNET_GAS_PRICE = {
 
 // Select based on chain ID
 export function getGasPrice(chainId: number) {
-  return chainId === MONAD_TESTNET.id ? TESTNET_GAS_PRICE : MAINNET_GAS_PRICE;
+  return chainId === 10143 ? TESTNET_GAS_PRICE : MAINNET_GAS_PRICE;
 }
 
 // Default export for backwards compatibility (testnet)

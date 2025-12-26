@@ -6,7 +6,7 @@ import { ConnectWallet } from "@/components/ConnectWallet";
 import { Game } from "@/components/Game";
 import { GameDemo } from "@/components/GameDemo";
 import { HowToPlay } from "@/components/HowToPlay";
-import { CONTRACT_ADDRESS } from "@/lib/contract";
+import { CONTRACT_ADDRESS, MONAD_CHAIN } from "@/lib/contract";
 
 export default function Home() {
   const [isDemo, setIsDemo] = useState(true);
@@ -122,7 +122,7 @@ export default function Home() {
           <span>Top 10 win</span>
           <span>•</span>
           <a
-            href={`https://testnet.monadexplorer.com/address/${CONTRACT_ADDRESS}`}
+            href={`${MONAD_CHAIN.blockExplorers.default.url}/address/${CONTRACT_ADDRESS}`}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-gray-600 font-mono"

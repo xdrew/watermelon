@@ -753,6 +753,7 @@ contract WatermelonSnapSolo is IEntropyConsumer {
     }
 
     /// @notice Update the on-chain leaderboard with a new score
+    /// @dev Optimized: single pass find, in-place update when possible, single directional shift
     /// @param season The season number
     /// @param player The player address
     /// @param score The new score
@@ -764,57 +765,76 @@ contract WatermelonSnapSolo is IEntropyConsumer {
         uint256 gameId
     ) internal {
         LeaderboardEntry[] storage leaderboard = seasonLeaderboard[season];
+        uint256 len = leaderboard.length;
 
-        // Find if player already exists in leaderboard
-        int256 existingIndex = -1;
-        for (uint256 i = 0; i < leaderboard.length; i++) {
+        // Single pass: find target position and existing position
+        uint256 targetIdx = len; // Default: append at end
+        uint256 existingIdx = type(uint256).max; // Not found marker
+
+        for (uint256 i = 0; i < len; i++) {
+            // Find target position (first entry with score < new score)
+            // Tie-break: >= means new score wins ties
+            if (targetIdx == len && score >= leaderboard[i].score) {
+                targetIdx = i;
+            }
+            // Find existing entry
             if (leaderboard[i].player == player) {
-                existingIndex = int256(i);
-                break;
+                existingIdx = i;
+                break; // Player found, target already set if score qualifies
             }
         }
 
-        // If player exists, remove their old entry first
-        if (existingIndex >= 0) {
-            // Shift entries left to remove
-            for (uint256 i = uint256(existingIndex); i < leaderboard.length - 1; i++) {
-                leaderboard[i] = leaderboard[i + 1];
+        // Case 1: Player exists in leaderboard
+        if (existingIdx != type(uint256).max) {
+            // Score can only improve, so targetIdx <= existingIdx
+            if (targetIdx > existingIdx) {
+                targetIdx = existingIdx;
             }
-            leaderboard.pop();
+
+            // Same position - just update in place (2 SSTOREs, not ~54)
+            if (targetIdx == existingIdx) {
+                leaderboard[existingIdx].score = score;
+                leaderboard[existingIdx].gameId = gameId;
+                emit LeaderboardUpdated(season, player, score, existingIdx + 1);
+                return;
+            }
+
+            // Moving up - single shift: move entries[targetIdx..existingIdx-1] down by 1
+            for (uint256 i = existingIdx; i > targetIdx; i--) {
+                leaderboard[i] = leaderboard[i - 1];
+            }
+            leaderboard[targetIdx] = LeaderboardEntry(player, score, gameId);
+            emit LeaderboardUpdated(season, player, score, targetIdx + 1);
+            return;
         }
 
-        // Find insertion position (sorted descending by score)
-        // Tie-break: last player wins (>= instead of >)
-        uint256 insertPos = leaderboard.length;
-        for (uint256 i = 0; i < leaderboard.length; i++) {
-            if (score >= leaderboard[i].score) {
-                insertPos = i;
-                break;
+        // Case 2: New player - continue search if target not found yet
+        if (targetIdx == len) {
+            for (uint256 i = 0; i < len; i++) {
+                if (score >= leaderboard[i].score) {
+                    targetIdx = i;
+                    break;
+                }
             }
         }
 
         // Only insert if within top N
-        if (insertPos < LEADERBOARD_SIZE) {
-            // Make room by shifting entries right
-            if (leaderboard.length < LEADERBOARD_SIZE) {
-                leaderboard.push(LeaderboardEntry(address(0), 0, 0));
-            }
-
-            // Shift entries right from insertPos
-            for (uint256 i = leaderboard.length - 1; i > insertPos; i--) {
-                leaderboard[i] = leaderboard[i - 1];
-            }
-
-            // Insert new entry
-            leaderboard[insertPos] = LeaderboardEntry(player, score, gameId);
-
-            // Trim to max size if needed
-            while (leaderboard.length > LEADERBOARD_SIZE) {
-                leaderboard.pop();
-            }
-
-            emit LeaderboardUpdated(season, player, score, insertPos + 1);
+        if (targetIdx >= LEADERBOARD_SIZE) {
+            return;
         }
+
+        // Expand array if needed, then shift right
+        if (len < LEADERBOARD_SIZE) {
+            leaderboard.push(LeaderboardEntry(address(0), 0, 0));
+            len++;
+        }
+
+        for (uint256 i = len - 1; i > targetIdx; i--) {
+            leaderboard[i] = leaderboard[i - 1];
+        }
+
+        leaderboard[targetIdx] = LeaderboardEntry(player, score, gameId);
+        emit LeaderboardUpdated(season, player, score, targetIdx + 1);
     }
 
     /// @notice Auto-distribute prizes based on leaderboard (pull pattern)

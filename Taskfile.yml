@@ -3,6 +3,9 @@ version: '3'
 vars:
   TESTNET_RPC: https://testnet-rpc.monad.xyz
   MAINNET_RPC: https://rpc.monad.xyz
+  DEPLOY_USER: root
+  DEPLOY_HOST: 46.62.174.208
+  DEPLOY_PATH: /opt/watermelon/frontend/out
 
 tasks:
   default:
@@ -421,6 +424,24 @@ tasks:
           exit 0
         fi
         vercel --prod
+    silent: true
+
+  deploy:server:
+    desc: Build and deploy frontend to nginx server
+    cmds:
+      - |
+        echo "🚀 Deploy to Server"
+        echo "==================="
+        echo "Target: {{.DEPLOY_USER}}@{{.DEPLOY_HOST}}:{{.DEPLOY_PATH}}"
+        echo ""
+        echo "Building frontend..."
+        cd frontend && npm run build
+        echo ""
+        echo "Uploading to server..."
+        ssh {{.DEPLOY_USER}}@{{.DEPLOY_HOST}} "rm -rf {{.DEPLOY_PATH}}/* && mkdir -p {{.DEPLOY_PATH}}"
+        scp -r out/* {{.DEPLOY_USER}}@{{.DEPLOY_HOST}}:{{.DEPLOY_PATH}}/
+        echo ""
+        echo "✅ Deployed to https://watermelon.monadungeon.xyz"
     silent: true
 
   # ============ UTILITIES ============

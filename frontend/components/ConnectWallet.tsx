@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useBalance, useChainId } from "wagmi";
 import { formatEther } from "viem";
-import { MONAD_TESTNET } from "@/lib/contract";
+import { MONAD_CHAIN } from "@/lib/contract";
 
 export function ConnectWallet() {
   const [mounted, setMounted] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const { login, logout, authenticated, ready } = usePrivy();
   const { wallets } = useWallets();
   const chainId = useChainId();
@@ -21,16 +22,47 @@ export function ConnectWallet() {
     setMounted(true);
   }, []);
 
-  const isWrongNetwork = authenticated && chainId !== MONAD_TESTNET.id;
+  const isWrongNetwork = authenticated && chainId !== MONAD_CHAIN.id;
 
-  const handleSwitchChain = async () => {
-    if (!activeWallet) return;
+  const handleSwitchChain = useCallback(async () => {
+    if (!activeWallet || switching) return;
+    setSwitching(true);
     try {
-      await activeWallet.switchChain(MONAD_TESTNET.id);
+      const provider = await activeWallet.getEthereumProvider();
+      // Try to switch first
+      try {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: `0x${MONAD_CHAIN.id.toString(16)}` }],
+        });
+      } catch (switchError: unknown) {
+        // Chain doesn't exist (4902), add it
+        if ((switchError as { code?: number })?.code === 4902) {
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [{
+              chainId: `0x${MONAD_CHAIN.id.toString(16)}`,
+              chainName: MONAD_CHAIN.name,
+              nativeCurrency: MONAD_CHAIN.nativeCurrency,
+              rpcUrls: [MONAD_CHAIN.rpcUrls.default.http[0]],
+              blockExplorerUrls: [MONAD_CHAIN.blockExplorers.default.url],
+            }],
+          });
+        }
+      }
     } catch (e) {
-      // User rejected or error
+      console.error("Failed to switch chain:", e);
+    } finally {
+      setSwitching(false);
     }
-  };
+  }, [activeWallet, switching]);
+
+  // Auto-switch when on wrong network
+  useEffect(() => {
+    if (isWrongNetwork && activeWallet && !switching) {
+      handleSwitchChain();
+    }
+  }, [isWrongNetwork, activeWallet, switching, handleSwitchChain]);
 
   if (!mounted || !ready) {
     return (
@@ -47,9 +79,10 @@ export function ConnectWallet() {
     return (
       <button
         onClick={handleSwitchChain}
-        className="px-4 py-2 border border-yellow-500 text-yellow-600 hover:bg-yellow-50 rounded-lg text-sm font-medium transition-colors"
+        disabled={switching}
+        className="px-4 py-2 border border-yellow-500 text-yellow-600 hover:bg-yellow-50 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
       >
-        Switch Network
+        {switching ? "Switching..." : "Switch to Monad"}
       </button>
     );
   }

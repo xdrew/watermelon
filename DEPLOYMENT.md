@@ -250,9 +250,10 @@ vercel --prod
 
 | Contract | Address |
 |----------|---------|
-| WatermelonSnapSolo | TBD |
-| SessionKeyManager | TBD |
-| Pyth Entropy | TBD |
+| WatermelonSnapSolo | `0x91d125B5d8BA84eB1FFf67e1A901a24F21962340` |
+| SessionKeyManager | `0x7003Eef4D1711B3bD909fa53a6D52AdeEF9A1df5` |
+| Pyth Entropy | `0xD458261E832415CFd3BAE5E416FdF3230ce6F134` |
+| Entropy Provider | `0x52DeaA1c84233F7bb8C8A45baeDE41091c616506` |
 
 ---
 

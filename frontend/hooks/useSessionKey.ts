@@ -10,7 +10,7 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
-import { CONTRACT_ADDRESS, SESSION_MANAGER_ADDRESS, MONAD_TESTNET, GAS_LIMITS, GAS_PRICE } from "@/lib/contract";
+import { CONTRACT_ADDRESS, SESSION_MANAGER_ADDRESS, MONAD_CHAIN, GAS_LIMITS, GAS_PRICE } from "@/lib/contract";
 
 // Session Key Manager ABI (minimal)
 const SESSION_MANAGER_ABI = [
@@ -122,7 +122,7 @@ export function useSessionKey() {
         // Check if wallet supports EIP-7702 by checking for signAuthorization
         // This is a heuristic - in practice, we try and catch
         const walletClient = createWalletClient({
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           transport: custom(provider),
         });
 
@@ -160,7 +160,7 @@ export function useSessionKey() {
         // Create wallet client for session key
         sessionWalletRef.current = createWalletClient({
           account,
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           transport: http(),
         });
 
@@ -222,7 +222,7 @@ export function useSessionKey() {
         // Create wallet client for EIP-7702
         const walletClient = createWalletClient({
           account: userAddress,
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           transport: custom(provider),
         });
 
@@ -264,7 +264,7 @@ export function useSessionKey() {
         // Create wallet client for session key
         sessionWalletRef.current = createWalletClient({
           account: sessionAccount,
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           transport: http(),
         });
 
@@ -335,7 +335,7 @@ export function useSessionKey() {
           account: sessionWalletRef.current.account!,
           to: userAddress, // User's delegated EOA
           data: executeData,
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           gas: gasLimit + 50_000n, // Add buffer for session key overhead
           ...GAS_PRICE,
         });

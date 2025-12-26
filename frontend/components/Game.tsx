@@ -5,7 +5,7 @@ import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { useChainId, useReadContract, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { formatEther } from "viem";
 import {
-  MONAD_TESTNET,
+  MONAD_CHAIN,
   GameState,
   getDangerLevel,
   SOLO_MAX_THRESHOLD,
@@ -62,6 +62,7 @@ export function Game({ onGameEnd }: GameProps) {
     checkStatus,
     refetchGameState,
     refetchPlayerGames,
+    refetchPlayerBest,
   } = useWatermelonGame(address);
 
   const burner = useBurnerWallet(address);
@@ -112,7 +113,7 @@ export function Game({ onGameEnd }: GameProps) {
       setTimeout(() => setFinalizeStatus(""), 5000);
     }
   }, [isFinalizeSuccess]);
-  const { data: playerRank } = useReadContract({
+  const { data: playerRank, refetch: refetchPlayerRank } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getPlayerRank",
@@ -123,7 +124,7 @@ export function Game({ onGameEnd }: GameProps) {
   const rank = playerRank ? Number(playerRank) : 0;
 
   // Leaderboard for competitor count
-  const { data: leaderboard } = useReadContract({
+  const { data: leaderboard, refetch: refetchLeaderboard } = useReadContract({
     address: CONTRACT_ADDRESS,
     abi: CONTRACT_ABI,
     functionName: "getLeaderboard",
@@ -169,6 +170,55 @@ export function Game({ onGameEnd }: GameProps) {
 
   // Handle starting game with burner
   const handleStartGame = useCallback(async () => {
+    // Verify wallet is on correct chain before starting
+    const provider = await activeWallet?.getEthereumProvider();
+    if (!provider) {
+      setStatus?.("Wallet not connected");
+      return;
+    }
+
+    const walletChainId = await provider.request({ method: "eth_chainId" });
+    const walletChain = parseInt(walletChainId as string, 16);
+
+    if (walletChain !== MONAD_CHAIN.id) {
+      setStatus?.("Switching to Monad...");
+      try {
+        // First try to switch (chain might already exist)
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: `0x${MONAD_CHAIN.id.toString(16)}` }],
+        });
+      } catch (switchError: unknown) {
+        // Chain doesn't exist, add it first
+        if ((switchError as { code?: number })?.code === 4902) {
+          try {
+            await provider.request({
+              method: "wallet_addEthereumChain",
+              params: [{
+                chainId: `0x${MONAD_CHAIN.id.toString(16)}`,
+                chainName: MONAD_CHAIN.name,
+                nativeCurrency: MONAD_CHAIN.nativeCurrency,
+                rpcUrls: [MONAD_CHAIN.rpcUrls.default.http[0]],
+                blockExplorerUrls: [MONAD_CHAIN.blockExplorers.default.url],
+              }],
+            });
+          } catch (addError) {
+            console.error("Failed to add chain:", addError);
+          }
+        } else {
+          console.error("Failed to switch chain:", switchError);
+        }
+      }
+
+      // Verify switch worked
+      const newChainId = await provider.request({ method: "eth_chainId" });
+      const newChain = parseInt(newChainId as string, 16);
+      if (newChain !== MONAD_CHAIN.id) {
+        setStatus?.("Please manually switch to Monad (Chain 143)");
+        return;
+      }
+    }
+
     setIsSettingUpBurner(true);
     setStatus?.("Checking session...");
 
@@ -192,8 +242,8 @@ export function Game({ onGameEnd }: GameProps) {
     }
 
     // Check balance and fund BEFORE trying to start
-    // Need ~0.22 MON but Monad may need higher buffer
-    const minBalance = BigInt(0.5 * 10**18); // 0.5 MON minimum
+    // Mainnet entry fee is 10 MON + ~0.5 for VRF/gas
+    const minBalance = BigInt(10.5 * 10**18); // 10.5 MON minimum
     if (freshStatus.balance < minBalance) {
       setStatus?.("Funding game session...");
       const funded = await burner.fundBurner();
@@ -273,7 +323,13 @@ export function Game({ onGameEnd }: GameProps) {
       isCashingOutRef.current = false;
 
       if (hash) {
-        await refetchGameState?.();
+        // Refetch all game-related data immediately
+        await Promise.all([
+          refetchGameState?.(),
+          refetchPlayerBest?.(),
+          refetchPlayerRank(),
+          refetchLeaderboard(),
+        ]);
         // Auto-withdraw silently in background (don't override game result display)
         if (burner.canWithdraw) {
           burner.withdrawToUser().then(() => burner.refreshStatus());
@@ -285,7 +341,7 @@ export function Game({ onGameEnd }: GameProps) {
     } else {
       cashOut();
     }
-  }, [burnerMode, burner, gameId, cashOut, setStatus, refetchGameState]);
+  }, [burnerMode, burner, gameId, cashOut, setStatus, refetchGameState, refetchPlayerBest, refetchPlayerRank, refetchLeaderboard]);
 
   if (!mounted || !ready) {
     return (
@@ -304,11 +360,47 @@ export function Game({ onGameEnd }: GameProps) {
     );
   }
 
-  if (chainId !== MONAD_TESTNET.id) {
+  if (chainId !== MONAD_CHAIN.id) {
+    const handleSwitchNetwork = async () => {
+      try {
+        const provider = await activeWallet?.getEthereumProvider();
+        if (!provider) return;
+        // Try to switch first
+        try {
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: `0x${MONAD_CHAIN.id.toString(16)}` }],
+          });
+        } catch (switchError: unknown) {
+          // Chain doesn't exist (4902), add it
+          if ((switchError as { code?: number })?.code === 4902) {
+            await provider.request({
+              method: "wallet_addEthereumChain",
+              params: [{
+                chainId: `0x${MONAD_CHAIN.id.toString(16)}`,
+                chainName: MONAD_CHAIN.name,
+                nativeCurrency: MONAD_CHAIN.nativeCurrency,
+                rpcUrls: [MONAD_CHAIN.rpcUrls.default.http[0]],
+                blockExplorerUrls: [MONAD_CHAIN.blockExplorers.default.url],
+              }],
+            });
+          }
+        }
+      } catch (e) {
+        console.error("Failed to switch:", e);
+      }
+    };
     return (
       <div className="text-center py-20">
         <div className="text-6xl mb-4">⚠️</div>
-        <p className="text-gray-500">Switch to Monad Testnet to play</p>
+        <p className="text-gray-500 mb-4">Switch to Monad Mainnet to play</p>
+        <button
+          onClick={handleSwitchNetwork}
+          className="px-6 py-2 bg-black text-white rounded-full font-medium hover:bg-gray-800"
+        >
+          Switch Network
+        </button>
+        <p className="text-xs text-gray-400 mt-2">Chain ID: 143</p>
       </div>
     );
   }
@@ -347,9 +439,13 @@ export function Game({ onGameEnd }: GameProps) {
             <span className="text-gray-300">|</span>
             {competitorCount > 0 && <span>{competitorCount} playing</span>}
             <span>Best: <span className="text-gray-600 font-medium">{bestScore.toString()}</span></span>
-            {rank > 0 && (
-              <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : rank <= 10 ? 'text-green-600' : 'text-gray-600'}`}>#{rank}</span>
-            )}
+            {rank > 0 ? (
+              <span className={`font-medium ${rank <= 3 ? 'text-yellow-600' : 'text-green-600'}`}>#{rank}</span>
+            ) : bestScore > 0 && leaderboard && leaderboard.length >= 10 && leaderboard[9].score > 0n ? (
+              <span className="text-orange-500 font-medium">
+                {Number(leaderboard[9].score) - Number(bestScore) + 1} pts to Top 10
+              </span>
+            ) : null}
           </>
         )}
       </div>
@@ -400,7 +496,7 @@ export function Game({ onGameEnd }: GameProps) {
           {isExploded ? `Exploded at ${gameState.threshold} bands!` : `Threshold was ${gameState.threshold}`}
           {gameState.vrfSequence > 0n && (
             <a
-              href={`https://entropy-explorer.pyth.network/?chain=monad-testnet&sequence=${gameState.vrfSequence.toString()}`}
+              href={`https://entropy-explorer.pyth.network/?chain=monad&sequence=${gameState.vrfSequence.toString()}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-gray-400 hover:text-gray-600 underline ml-2"

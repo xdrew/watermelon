@@ -1,19 +1,20 @@
 import { http } from "wagmi";
+import { defineChain } from "viem";
 import { createConfig } from "@privy-io/wagmi";
-import { MONAD_TESTNET } from "./contract";
+import { MONAD_CHAIN } from "./contract";
 
-// Define chain for wagmi
-export const monadTestnet = {
-  id: MONAD_TESTNET.id,
-  name: MONAD_TESTNET.name,
-  nativeCurrency: MONAD_TESTNET.nativeCurrency,
-  rpcUrls: MONAD_TESTNET.rpcUrls,
-  blockExplorers: MONAD_TESTNET.blockExplorers,
-} as const;
+// Define chain for wagmi using viem's defineChain for proper typing
+export const monadChain = defineChain({
+  id: MONAD_CHAIN.id,
+  name: MONAD_CHAIN.name,
+  nativeCurrency: MONAD_CHAIN.nativeCurrency,
+  rpcUrls: MONAD_CHAIN.rpcUrls,
+  blockExplorers: MONAD_CHAIN.blockExplorers,
+});
 
 export const config = createConfig({
-  chains: [monadTestnet],
+  chains: [monadChain],
   transports: {
-    [monadTestnet.id]: http(),
+    [monadChain.id]: http(),
   },
-});
+} as any);

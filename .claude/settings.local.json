@@ -40,7 +40,10 @@
       "Bash(npx tsc:*)",
       "Bash(npm uninstall:*)",
       "Bash(CONTRACT_ADDRESS=0x917d74ce1f0610b5fb1a0efbc10ed42e1f6aeec6 npx hardhat run:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(source .env.local)",
+      "Bash(task deploy:server)",
+      "Bash(git remote add:*)"
     ]
   }
 }

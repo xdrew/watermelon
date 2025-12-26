@@ -12,7 +12,7 @@ import {
   encodeFunctionData,
 } from "viem";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
-import { CONTRACT_ADDRESS, CONTRACT_ABI, MONAD_TESTNET, GAS_LIMITS } from "@/lib/contract";
+import { CONTRACT_ADDRESS, CONTRACT_ABI, MONAD_CHAIN, GAS_LIMITS } from "@/lib/contract";
 
 // Storage keys
 const BURNER_KEY_STORAGE = "watermelon_burner_key";
@@ -21,10 +21,10 @@ const TAB_ID_STORAGE = "watermelon_tab_id";
 const LOCK_TIMEOUT_MS = 30000; // Lock expires after 30s (in case tab crashes)
 
 // Minimum balance needed for a full game (entry + VRF + max gas)
-// Monad may have stricter requirements, so use higher buffer
-const MIN_GAME_BALANCE = parseEther("0.5");
-// Recommended funding amount - enough for 2-3 games
-const RECOMMENDED_FUNDING = parseEther("1.0");
+// Mainnet entry fee is 10 MON + ~0.2 for VRF/gas
+const MIN_GAME_BALANCE = parseEther("10.5");
+// Recommended funding amount - enough for 1 game with buffer
+const RECOMMENDED_FUNDING = parseEther("11.0");
 // Minimum balance worth withdrawing (must cover gas cost ~0.003 MON + reserve)
 const MIN_WITHDRAW_BALANCE = parseEther("0.01");
 // Monad requires minimum reserve balance in accounts
@@ -105,7 +105,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
 
   // Public client for reading
   const publicClient = useMemo(() => createPublicClient({
-    chain: MONAD_TESTNET,
+    chain: MONAD_CHAIN,
     transport: http(),
   }), []);
 
@@ -208,7 +208,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
 
       const walletClient = createWalletClient({
         account: userAddress,
-        chain: MONAD_TESTNET,
+        chain: MONAD_CHAIN,
         transport: http(),
       });
 
@@ -222,12 +222,14 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         }],
       });
 
+      console.log("fundBurner tx:", hash);
       // Wait for confirmation
-      await publicClient.waitForTransactionReceipt({ hash: hash as Hex });
+      await publicClient.waitForTransactionReceipt({ hash: hash as Hex, timeout: 60_000 });
 
       await refreshStatus();
       return true;
     } catch (err) {
+      console.error("fundBurner error:", err);
       setState(prev => ({ ...prev, error: (err as Error).message }));
       return false;
     }
@@ -255,11 +257,13 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         }],
       });
 
-      await publicClient.waitForTransactionReceipt({ hash: hash as Hex });
+      console.log("authorizeBurner tx:", hash);
+      await publicClient.waitForTransactionReceipt({ hash: hash as Hex, timeout: 60_000 });
 
       await refreshStatus();
       return true;
     } catch (err) {
+      console.error("authorizeBurner error:", err);
       setState(prev => ({ ...prev, error: (err as Error).message }));
       return false;
     }
@@ -300,7 +304,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
 
       const walletClient = createWalletClient({
         account: burnerAccount,
-        chain: MONAD_TESTNET,
+        chain: MONAD_CHAIN,
         transport: http(),
       });
 
@@ -387,7 +391,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
 
         const walletClient = createWalletClient({
           account: burnerAccount,
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           transport: http(),
         });
 
@@ -460,7 +464,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         try {
           const walletClient = createWalletClient({
           account: burnerAccount,
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           transport: http(),
         });
 
@@ -526,7 +530,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         try {
           const walletClient = createWalletClient({
           account: burnerAccount,
-          chain: MONAD_TESTNET,
+          chain: MONAD_CHAIN,
           transport: http(),
         });
 

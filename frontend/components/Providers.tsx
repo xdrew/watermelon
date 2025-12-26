@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "@privy-io/wagmi";
 import { PrivyProvider } from "@privy-io/react-auth";
-import { config, monadTestnet } from "@/lib/wagmi";
+import { config, monadChain } from "@/lib/wagmi";
 import { useState } from "react";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -17,8 +17,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
           theme: "light",
           accentColor: "#000000",
         },
-        defaultChain: monadTestnet,
-        supportedChains: [monadTestnet],
+        defaultChain: monadChain,
+        supportedChains: [monadChain],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "users-without-wallets",
