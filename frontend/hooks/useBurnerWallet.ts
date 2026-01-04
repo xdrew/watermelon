@@ -206,19 +206,24 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
     try {
       const provider = await activeWallet.getEthereumProvider();
 
-      const walletClient = createWalletClient({
-        account: userAddress,
-        chain: MONAD_CHAIN,
-        transport: http(),
+      // Get nonce for the transaction
+      const nonce = await publicClient.getTransactionCount({
+        address: userAddress,
+        blockTag: "pending",
       });
 
-      // Send RECOMMENDED_FUNDING to burner
+      // Send RECOMMENDED_FUNDING to burner with explicit gas params
+      // This avoids eth_fillTransaction which Monad doesn't support
       const hash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
           from: userAddress,
           to: burnerAccount.address,
           value: `0x${RECOMMENDED_FUNDING.toString(16)}`,
+          gas: `0x${(21000).toString(16)}`, // 21000 for simple transfer
+          maxFeePerGas: `0x${GAS_PRICE.maxFeePerGas.toString(16)}`,
+          maxPriorityFeePerGas: `0x${GAS_PRICE.maxPriorityFeePerGas.toString(16)}`,
+          nonce: `0x${nonce.toString(16)}`,
         }],
       });
 
@@ -248,12 +253,22 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         args: [burnerAccount.address],
       });
 
+      // Get nonce for the transaction
+      const nonce = await publicClient.getTransactionCount({
+        address: userAddress,
+        blockTag: "pending",
+      });
+
       const hash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
           from: userAddress,
           to: CONTRACT_ADDRESS,
           data,
+          gas: `0x${(100000).toString(16)}`, // 100k for contract call
+          maxFeePerGas: `0x${GAS_PRICE.maxFeePerGas.toString(16)}`,
+          maxPriorityFeePerGas: `0x${GAS_PRICE.maxPriorityFeePerGas.toString(16)}`,
+          nonce: `0x${nonce.toString(16)}`,
         }],
       });
 

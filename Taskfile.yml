@@ -285,6 +285,30 @@ tasks:
 
   # ============ INFO & ADMIN ============
 
+  status:
+    desc: Show mainnet contract status (treasury, leaderboard, countdown)
+    cmds:
+      - |
+        CONTRACT_ADDR=$(grep "^NEXT_PUBLIC_CONTRACT_ADDRESS=" frontend/.env.local 2>/dev/null | tail -1 | cut -d'=' -f2)
+        if [ -z "$CONTRACT_ADDR" ]; then
+          echo "❌ CONTRACT_ADDRESS not found in frontend/.env.local"
+          exit 1
+        fi
+        CONTRACT_ADDRESS=$CONTRACT_ADDR npx hardhat run scripts/status.ts --network monad
+    silent: true
+
+  withdraw:
+    desc: Withdraw protocol fees from mainnet contract
+    cmds:
+      - |
+        CONTRACT_ADDR=$(grep "^NEXT_PUBLIC_CONTRACT_ADDRESS=" frontend/.env.local 2>/dev/null | tail -1 | cut -d'=' -f2)
+        if [ -z "$CONTRACT_ADDR" ]; then
+          echo "❌ CONTRACT_ADDRESS not found in frontend/.env.local"
+          exit 1
+        fi
+        CONTRACT_ADDRESS=$CONTRACT_ADDR npx hardhat run scripts/withdraw.ts --network monad
+    silent: true
+
   info:
     desc: Get contract info (interactive)
     cmds:

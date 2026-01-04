@@ -12,6 +12,7 @@ import {
   CONTRACT_ADDRESS,
   CONTRACT_ABI,
   formatTimeLeft,
+  getGasPrice,
 } from "@/lib/contract";
 import { useWatermelonGame } from "@/hooks/useWatermelonGame";
 import { useBurnerWallet } from "@/hooks/useBurnerWallet";
@@ -90,6 +91,7 @@ export function Game({ onGameEnd }: GameProps) {
   const { isLoading: isFinalizeConfirming, isSuccess: isFinalizeSuccess } = useWaitForTransactionReceipt({ hash: finalizeTxHash });
   const [finalizeStatus, setFinalizeStatus] = useState("");
 
+  const gasPrice = getGasPrice(chainId);
   const triggerPayouts = useCallback(() => {
     setFinalizeStatus("Triggering payouts...");
     writeFinalize(
@@ -98,13 +100,15 @@ export function Game({ onGameEnd }: GameProps) {
         abi: CONTRACT_ABI,
         functionName: "finalizeSeason",
         args: [BigInt(seasonNumber)],
+        gas: 500_000n, // finalizeSeason iterates leaderboard + transfers
+        ...gasPrice,
       },
       {
         onSuccess: () => setFinalizeStatus("Confirming..."),
         onError: (err) => setFinalizeStatus(`Error: ${err.message.slice(0, 50)}`),
       }
     );
-  }, [writeFinalize, seasonNumber]);
+  }, [writeFinalize, seasonNumber, gasPrice]);
 
   // Clear status on success
   useEffect(() => {

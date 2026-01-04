@@ -43,7 +43,9 @@
       "Bash(mv:*)",
       "Bash(source .env.local)",
       "Bash(task deploy:server)",
-      "Bash(git remote add:*)"
+      "Bash(git remote add:*)",
+      "Bash(cast balance:*)",
+      "Bash(task status:*)"
     ]
   }
 }
