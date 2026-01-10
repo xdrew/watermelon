@@ -23,8 +23,8 @@ const LOCK_TIMEOUT_MS = 30000; // Lock expires after 30s (in case tab crashes)
 // Minimum balance needed for a full game (entry + VRF + max gas)
 // Mainnet entry fee is 10 MON + ~0.2 for VRF/gas
 const MIN_GAME_BALANCE = parseEther("10.5");
-// Recommended funding amount - enough for 1 game with comfortable gas buffer
-const RECOMMENDED_FUNDING = parseEther("12.0");
+// Recommended funding amount - enough for 1 game with buffer
+const RECOMMENDED_FUNDING = parseEther("11.0");
 // Minimum balance worth withdrawing (must cover gas cost ~0.003 MON + reserve)
 const MIN_WITHDRAW_BALANCE = parseEther("0.01");
 // Monad requires minimum reserve balance in accounts
@@ -366,43 +366,52 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
 
     const maxRetries = 2;
     let lastError: Error | null = null;
+    let checkedAuthorization = false;
 
     try {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
           // Fresh check - don't rely on potentially stale state
           const balance = await publicClient.getBalance({ address: burnerAccount.address });
-        const authorizedOperator = await publicClient.readContract({
-          address: CONTRACT_ADDRESS,
-          abi: CONTRACT_ABI,
-          functionName: "authorizedOperator",
-          args: [userAddress],
-        }) as `0x${string}`;
+          const authorizedOperator = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "authorizedOperator",
+            args: [userAddress],
+          }) as `0x${string}`;
 
-        const isAuthorized = authorizedOperator.toLowerCase() === burnerAccount.address.toLowerCase();
+          const isAuthorized = authorizedOperator.toLowerCase() === burnerAccount.address.toLowerCase();
+          checkedAuthorization = true;
 
-        // Get game cost to check if we have enough
-        const [, , totalCost] = await publicClient.readContract({
-          address: CONTRACT_ADDRESS,
-          abi: CONTRACT_ABI,
-          functionName: "getGameCost",
-        }) as [bigint, bigint, bigint];
-
-        // Need game cost + gas buffer (0.15 MON for gas at 150 gwei)
-        const gasBuffer = parseEther("0.15");
-        const requiredBalance = totalCost + gasBuffer;
-
-        if (!isAuthorized || balance < requiredBalance) {
-          console.error("Burner not ready:", {
+          console.log("Burner pre-check:", {
+            burner: burnerAccount.address,
+            authorizedOperator,
             isAuthorized,
             balance: formatEther(balance),
-            required: formatEther(requiredBalance),
-            totalCost: formatEther(totalCost),
           });
-          // Update state so UI can react
-          setState(prev => ({ ...prev, balance, isAuthorized, isReady: false }));
-          return null;
-        }
+
+          // Get game cost to check if we have enough
+          const [, , totalCost] = await publicClient.readContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "getGameCost",
+          }) as [bigint, bigint, bigint];
+
+          // Need game cost + gas buffer (0.15 MON for gas at 150 gwei)
+          const gasBuffer = parseEther("0.15");
+          const requiredBalance = totalCost + gasBuffer;
+
+          if (!isAuthorized) {
+            console.error("Burner not authorized! Operator on-chain:", authorizedOperator);
+            setState(prev => ({ ...prev, balance, isAuthorized: false, isReady: false, error: "Session not authorized. Please reconnect." }));
+            return null;
+          }
+
+          if (balance < requiredBalance) {
+            console.error("Burner balance too low:", formatEther(balance), "need:", formatEther(requiredBalance));
+            setState(prev => ({ ...prev, balance, isAuthorized, isReady: false, error: "Insufficient session balance" }));
+            return null;
+          }
 
         const walletClient = createWalletClient({
           account: burnerAccount,
@@ -439,23 +448,32 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         lastError = err as Error;
         const errorMsg = lastError.message || "";
 
-        // Retry on "insufficient balance" errors (RPC inconsistency)
-        if (errorMsg.includes("insufficient balance") && attempt < maxRetries) {
+        // If we verified authorization and it passed, retry on "insufficient balance" (RPC inconsistency)
+        // But if authorization wasn't checked or failed, don't retry - it's likely a contract revert
+        if (errorMsg.includes("insufficient balance") && checkedAuthorization && attempt < maxRetries) {
           console.warn(`startGameWithBurner attempt ${attempt + 1} failed, retrying...`);
           // Wait a moment for RPC nodes to sync
           await new Promise(resolve => setTimeout(resolve, 1000));
           continue;
         }
 
-          console.error("startGameWithBurner error:", err);
-          setState(prev => ({ ...prev, error: errorMsg }));
+        // If we get "insufficient balance" but balance is fine, it's probably a contract revert
+        // Monad RPC sometimes returns misleading error messages
+        if (errorMsg.includes("insufficient balance")) {
+          console.error("startGameWithBurner: Got 'insufficient balance' but balance check passed. Likely a contract revert (authorization issue?)");
+          setState(prev => ({ ...prev, error: "Transaction failed. Try withdrawing and re-funding your session." }));
           return null;
+        }
+
+        console.error("startGameWithBurner error:", err);
+        setState(prev => ({ ...prev, error: errorMsg }));
+        return null;
         }
       }
 
       // All retries exhausted
       console.error("startGameWithBurner failed after retries:", lastError);
-      setState(prev => ({ ...prev, error: lastError?.message || "Transaction failed" }));
+      setState(prev => ({ ...prev, error: lastError?.message || "Transaction failed. Try withdrawing and re-funding." }));
       return null;
     } finally {
       releaseTxLock(tabId);

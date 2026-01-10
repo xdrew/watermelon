@@ -593,7 +593,7 @@ export function Game({ onGameEnd }: GameProps) {
                 {burner.isReady && <span className="text-green-600">Session: {burner.formattedBalance}</span>}
               </div>
               {!burner.isReady && (
-                <span className="text-xs text-gray-300">+2 MON gas buffer for session</span>
+                <span className="text-xs text-gray-300">+1 MON gas buffer for session</span>
               )}
             </div>
 
