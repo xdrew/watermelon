@@ -69,6 +69,26 @@ export function Game({ onGameEnd }: GameProps) {
   const burner = useBurnerWallet(address);
   const prevIsGameOver = useRef(false);
   const [timeLeft, setTimeLeft] = useState("");
+  const [showGameResult, setShowGameResult] = useState(false);
+
+  // Track when game ends to show result only for recent games (not on refresh)
+  const RESULT_DISPLAY_TIMEOUT = 2 * 60 * 1000; // 2 minutes
+  useEffect(() => {
+    if (isGameOver && gameId) {
+      const endedAt = sessionStorage.getItem(`game_ended_${gameId}`);
+      if (!endedAt) {
+        // Game just ended - save timestamp and show result
+        sessionStorage.setItem(`game_ended_${gameId}`, Date.now().toString());
+        setShowGameResult(true);
+      } else {
+        // Check if ended recently
+        const elapsed = Date.now() - parseInt(endedAt, 10);
+        setShowGameResult(elapsed < RESULT_DISPLAY_TIMEOUT);
+      }
+    } else {
+      setShowGameResult(false);
+    }
+  }, [isGameOver, gameId]);
 
   // Season info
   const { data: seasonInfo } = useReadContract({
@@ -437,8 +457,8 @@ export function Game({ onGameEnd }: GameProps) {
         ) : timeLeft ? (
           <span>{timeLeft}</span>
         ) : null}
-        {/* Only show active stats when season is not finalized */}
-        {!isSeasonFinalized && (
+        {/* Only show active stats when season is not finalized and not finalizing */}
+        {!isSeasonFinalized && !isFinalizePending && !isFinalizeConfirming && !isFinalizeSuccess && (
           <>
             <span className="text-gray-300">|</span>
             {competitorCount > 0 && <span>{competitorCount} playing</span>}
@@ -484,8 +504,8 @@ export function Game({ onGameEnd }: GameProps) {
         )}
       </div>
 
-      {/* Score display when game ends */}
-      {isGameOver && gameState.currentState !== null && (
+      {/* Score display when game ends (only show for recent games, not stale results on refresh) */}
+      {showGameResult && gameState.currentState !== null && (
         <div className="text-center mb-4 -mt-14 relative z-10">
           <div className={`text-6xl font-black ${isExploded ? 'text-red-500' : 'text-green-500'}`}>
             {isExploded ? '0' : gameState.finalScore.toString()}
@@ -495,7 +515,7 @@ export function Game({ onGameEnd }: GameProps) {
       )}
 
       {/* Threshold reveal */}
-      {isGameOver && gameState.threshold > 0 && !isCancelled && (
+      {showGameResult && gameState.threshold > 0 && !isCancelled && (
         <div className={`text-center text-sm mb-6 py-2 px-6 rounded-full ${isExploded ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
           {isExploded ? `Exploded at ${gameState.threshold} bands!` : `Threshold was ${gameState.threshold}`}
           {gameState.vrfSequence > 0n && (
@@ -512,7 +532,7 @@ export function Game({ onGameEnd }: GameProps) {
       )}
 
       {/* Cancelled message */}
-      {isCancelled && (
+      {showGameResult && isCancelled && (
         <div className="text-center text-sm mb-6 py-2 px-4 rounded-full bg-gray-100 text-gray-600">
           Game cancelled - fee refunded
         </div>
@@ -567,9 +587,14 @@ export function Game({ onGameEnd }: GameProps) {
           </div>
         ) : !gameId || isGameOver ? (
           <div className="space-y-3">
-            <div className="flex justify-center items-center gap-4 text-sm text-gray-400">
-              <span>Entry: {formatEther(cost.entryFee)} MON</span>
-              {burner.isReady && <span className="text-green-600">Session: {burner.formattedBalance}</span>}
+            <div className="flex flex-col items-center gap-1 text-sm text-gray-400">
+              <div className="flex items-center gap-4">
+                <span>Entry: {formatEther(cost.entryFee)} MON</span>
+                {burner.isReady && <span className="text-green-600">Session: {burner.formattedBalance}</span>}
+              </div>
+              {!burner.isReady && (
+                <span className="text-xs text-gray-300">+2 MON gas buffer for session</span>
+              )}
             </div>
 
             {burner.hasOtherTabs && (

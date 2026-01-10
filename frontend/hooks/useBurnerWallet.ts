@@ -23,8 +23,8 @@ const LOCK_TIMEOUT_MS = 30000; // Lock expires after 30s (in case tab crashes)
 // Minimum balance needed for a full game (entry + VRF + max gas)
 // Mainnet entry fee is 10 MON + ~0.2 for VRF/gas
 const MIN_GAME_BALANCE = parseEther("10.5");
-// Recommended funding amount - enough for 1 game with buffer
-const RECOMMENDED_FUNDING = parseEther("11.0");
+// Recommended funding amount - enough for 1 game with comfortable gas buffer
+const RECOMMENDED_FUNDING = parseEther("12.0");
 // Minimum balance worth withdrawing (must cover gas cost ~0.003 MON + reserve)
 const MIN_WITHDRAW_BALANCE = parseEther("0.01");
 // Monad requires minimum reserve balance in accounts
