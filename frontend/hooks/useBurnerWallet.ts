@@ -21,8 +21,8 @@ const TAB_ID_STORAGE = "watermelon_tab_id";
 const LOCK_TIMEOUT_MS = 30000; // Lock expires after 30s (in case tab crashes)
 
 // Minimum balance needed for a full game (entry + VRF + max gas)
-// Mainnet entry fee is 10 MON + ~0.2 for VRF/gas
-const MIN_GAME_BALANCE = parseEther("10.5");
+// Mainnet: 10 MON entry + 0.4 MON VRF + 0.25 MON gas = 10.65 MON
+const MIN_GAME_BALANCE = parseEther("10.7");
 // Recommended funding amount - enough for 1 game with buffer
 const RECOMMENDED_FUNDING = parseEther("11.0");
 // Minimum balance worth withdrawing (must cover gas cost ~0.003 MON + reserve)
@@ -30,10 +30,10 @@ const MIN_WITHDRAW_BALANCE = parseEther("0.01");
 // Monad requires minimum reserve balance in accounts
 const MONAD_RESERVE_BALANCE = parseEther("0.001");
 
-// Gas settings for Monad
+// Gas settings for Monad (updated to match network recommendations)
 const GAS_PRICE = {
-  maxFeePerGas: 150n * 10n ** 9n, // 150 gwei
-  maxPriorityFeePerGas: 1n * 10n ** 9n, // 1 gwei
+  maxFeePerGas: 250n * 10n ** 9n, // 250 gwei (above network's 202 recommendation)
+  maxPriorityFeePerGas: 2n * 10n ** 9n, // 2 gwei (match network recommendation)
 };
 
 export interface BurnerWalletState {
@@ -383,13 +383,6 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
           const isAuthorized = authorizedOperator.toLowerCase() === burnerAccount.address.toLowerCase();
           checkedAuthorization = true;
 
-          console.log("Burner pre-check:", {
-            burner: burnerAccount.address,
-            authorizedOperator,
-            isAuthorized,
-            balance: formatEther(balance),
-          });
-
           // Get game cost to check if we have enough
           const [, , totalCost] = await publicClient.readContract({
             address: CONTRACT_ADDRESS,
@@ -397,8 +390,17 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
             functionName: "getGameCost",
           }) as [bigint, bigint, bigint];
 
-          // Need game cost + gas buffer (0.15 MON for gas at 150 gwei)
-          const gasBuffer = parseEther("0.15");
+          console.log("Burner pre-check:", {
+            burner: burnerAccount.address,
+            authorizedOperator,
+            isAuthorized,
+            balance: formatEther(balance),
+            totalCost: formatEther(totalCost),
+            gasPrice: "250 gwei",
+          });
+
+          // Need game cost + gas buffer (0.25 MON for gas at 250 gwei)
+          const gasBuffer = parseEther("0.25");
           const requiredBalance = totalCost + gasBuffer;
 
           if (!isAuthorized) {
@@ -448,20 +450,31 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         lastError = err as Error;
         const errorMsg = lastError.message || "";
 
+        // Enhanced error logging for debugging
+        console.error("startGameWithBurner error details:", {
+          attempt: attempt + 1,
+          errorMessage: errorMsg,
+          errorName: lastError.name,
+          errorCause: (lastError as any).cause,
+          errorCode: (lastError as any).code,
+          errorData: (lastError as any).data,
+          shortMessage: (lastError as any).shortMessage,
+        });
+
         // If we verified authorization and it passed, retry on "insufficient balance" (RPC inconsistency)
         // But if authorization wasn't checked or failed, don't retry - it's likely a contract revert
         if (errorMsg.includes("insufficient balance") && checkedAuthorization && attempt < maxRetries) {
-          console.warn(`startGameWithBurner attempt ${attempt + 1} failed, retrying...`);
-          // Wait a moment for RPC nodes to sync
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          console.warn(`startGameWithBurner attempt ${attempt + 1} failed, retrying in 2s...`);
+          // Wait longer for RPC nodes to sync
+          await new Promise(resolve => setTimeout(resolve, 2000));
           continue;
         }
 
         // If we get "insufficient balance" but balance is fine, it's probably a contract revert
         // Monad RPC sometimes returns misleading error messages
         if (errorMsg.includes("insufficient balance")) {
-          console.error("startGameWithBurner: Got 'insufficient balance' but balance check passed. Likely a contract revert (authorization issue?)");
-          setState(prev => ({ ...prev, error: "Transaction failed. Try withdrawing and re-funding your session." }));
+          console.error("startGameWithBurner: Got 'insufficient balance' but balance check passed. This may be an RPC issue - try again.");
+          setState(prev => ({ ...prev, error: "Transaction failed (RPC issue). Please try again." }));
           return null;
         }
 
