@@ -426,11 +426,29 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         // Log transaction parameters for debugging
         console.log("Sending tx:", {
           to: CONTRACT_ADDRESS,
+          userAddress,
+          burnerAddress: burnerAccount.address,
           value: totalCost.toString(),
           gas: GAS_LIMITS.startGame.toString(),
           gasPrice: GAS_PRICE.gasPrice.toString(),
           nonce,
         });
+
+        // First simulate to check if it would work
+        try {
+          const simResult = await publicClient.simulateContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "startGameFor",
+            args: [userAddress],
+            value: totalCost,
+            account: burnerAccount,
+          });
+          console.log("Simulation result:", simResult);
+        } catch (simError: any) {
+          console.error("Simulation failed:", simError.message);
+          // Continue anyway to see actual error
+        }
 
         // Use writeContract which might handle things differently
         const hash = await walletClient.writeContract({
