@@ -434,33 +434,19 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
           nonce,
         });
 
-        // First simulate to check if it would work
-        try {
-          const simResult = await publicClient.simulateContract({
-            address: CONTRACT_ADDRESS,
-            abi: CONTRACT_ABI,
-            functionName: "startGameFor",
-            args: [userAddress],
-            value: totalCost,
-            account: burnerAccount,
-          });
-          console.log("Simulation result:", simResult);
-        } catch (simError: any) {
-          console.error("Simulation failed:", simError.message);
-          // Continue anyway to see actual error
-        }
-
-        // Use writeContract which might handle things differently
-        const hash = await walletClient.writeContract({
+        // Simulate first, then use the request from simulation
+        const { request } = await publicClient.simulateContract({
           address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "startGameFor",
           args: [userAddress],
           value: totalCost,
-          gas: GAS_LIMITS.startGame,
-          nonce,
-          ...GAS_PRICE,
+          account: burnerAccount,
         });
+        console.log("Simulation succeeded, sending tx with request:", request);
+
+        // Use the exact request from simulation - no overrides
+        const hash = await walletClient.writeContract(request);
 
         // Wait for transaction to be mined before returning
         await publicClient.waitForTransactionReceipt({ hash });
