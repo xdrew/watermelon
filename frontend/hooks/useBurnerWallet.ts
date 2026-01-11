@@ -21,8 +21,8 @@ const TAB_ID_STORAGE = "watermelon_tab_id";
 const LOCK_TIMEOUT_MS = 30000; // Lock expires after 30s (in case tab crashes)
 
 // Minimum balance needed for a full game (entry + VRF + max gas)
-// Mainnet: 10 MON entry + 0.4 MON VRF + 0.25 MON gas = 10.65 MON
-const MIN_GAME_BALANCE = parseEther("10.7");
+// Mainnet: 10 MON entry + 0.4 MON VRF + 0.15 MON gas = 10.55 MON
+const MIN_GAME_BALANCE = parseEther("10.6");
 // Recommended funding amount - enough for 1 game with buffer
 const RECOMMENDED_FUNDING = parseEther("11.0");
 // Minimum balance worth withdrawing (must cover gas cost ~0.003 MON + reserve)
@@ -30,10 +30,10 @@ const MIN_WITHDRAW_BALANCE = parseEther("0.01");
 // Monad requires minimum reserve balance in accounts
 const MONAD_RESERVE_BALANCE = parseEther("0.001");
 
-// Gas settings for Monad (updated to match network recommendations)
+// Gas settings for Monad - use legacy gasPrice instead of EIP-1559
+// Monad RPC may have issues with EIP-1559 balance validation
 const GAS_PRICE = {
-  maxFeePerGas: 250n * 10n ** 9n, // 250 gwei (above network's 202 recommendation)
-  maxPriorityFeePerGas: 2n * 10n ** 9n, // 2 gwei (match network recommendation)
+  gasPrice: 250n * 10n ** 9n, // 250 gwei legacy gas price
 };
 
 export interface BurnerWalletState {
@@ -221,8 +221,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
           to: burnerAccount.address,
           value: `0x${RECOMMENDED_FUNDING.toString(16)}`,
           gas: `0x${(21000).toString(16)}`, // 21000 for simple transfer
-          maxFeePerGas: `0x${GAS_PRICE.maxFeePerGas.toString(16)}`,
-          maxPriorityFeePerGas: `0x${GAS_PRICE.maxPriorityFeePerGas.toString(16)}`,
+          gasPrice: `0x${GAS_PRICE.gasPrice.toString(16)}`,
           nonce: `0x${nonce.toString(16)}`,
         }],
       });
@@ -266,8 +265,7 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
           to: CONTRACT_ADDRESS,
           data,
           gas: `0x${(100000).toString(16)}`, // 100k for contract call
-          maxFeePerGas: `0x${GAS_PRICE.maxFeePerGas.toString(16)}`,
-          maxPriorityFeePerGas: `0x${GAS_PRICE.maxPriorityFeePerGas.toString(16)}`,
+          gasPrice: `0x${GAS_PRICE.gasPrice.toString(16)}`,
           nonce: `0x${nonce.toString(16)}`,
         }],
       });
@@ -323,11 +321,9 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
         transport: http(),
       });
 
-      // Calculate gas cost for transfer (use base fee, not max fee for tighter estimate)
+      // Calculate gas cost for transfer
       const gasLimit = 21000n;
-      const baseFee = 100n * 10n ** 9n; // 100 gwei minimum on Monad
-      const priorityFee = GAS_PRICE.maxPriorityFeePerGas;
-      const gasCost = gasLimit * (baseFee + priorityFee);
+      const gasCost = gasLimit * GAS_PRICE.gasPrice;
 
       // Amount to send (balance minus gas minus reserve for Monad)
       const amountToSend = currentBalance - gasCost - MONAD_RESERVE_BALANCE;
@@ -396,11 +392,11 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
             isAuthorized,
             balance: formatEther(balance),
             totalCost: formatEther(totalCost),
-            gasPrice: "250 gwei",
+            gasPrice: "250 gwei (legacy)",
           });
 
-          // Need game cost + gas buffer (0.25 MON for gas at 250 gwei)
-          const gasBuffer = parseEther("0.25");
+          // Need game cost + gas buffer (0.15 MON for gas at 250 gwei)
+          const gasBuffer = parseEther("0.15");
           const requiredBalance = totalCost + gasBuffer;
 
           if (!isAuthorized) {
