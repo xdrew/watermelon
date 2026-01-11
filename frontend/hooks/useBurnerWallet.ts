@@ -423,15 +423,21 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
           blockTag: "pending",
         });
 
-        const data = encodeFunctionData({
+        // Log transaction parameters for debugging
+        console.log("Sending tx:", {
+          to: CONTRACT_ADDRESS,
+          value: totalCost.toString(),
+          gas: GAS_LIMITS.startGame.toString(),
+          gasPrice: GAS_PRICE.gasPrice.toString(),
+          nonce,
+        });
+
+        // Use writeContract which might handle things differently
+        const hash = await walletClient.writeContract({
+          address: CONTRACT_ADDRESS,
           abi: CONTRACT_ABI,
           functionName: "startGameFor",
           args: [userAddress],
-        });
-
-        const hash = await walletClient.sendTransaction({
-          to: CONTRACT_ADDRESS,
-          data,
           value: totalCost,
           gas: GAS_LIMITS.startGame,
           nonce,
