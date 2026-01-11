@@ -515,44 +515,33 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
           const walletClient = createWalletClient({
-          account: burnerAccount,
-          chain: MONAD_CHAIN,
-          transport: http(),
-        });
+            account: burnerAccount,
+            chain: MONAD_CHAIN,
+            transport: http(),
+          });
 
-        // Get fresh nonce
-        const nonce = await publicClient.getTransactionCount({
-          address: burnerAccount.address,
-          blockTag: "pending",
-        });
+          // Simulate first, then use the request
+          const { request } = await publicClient.simulateContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "addBand",
+            args: [gameId],
+            account: burnerAccount,
+          });
 
-        const data = encodeFunctionData({
-          abi: CONTRACT_ABI,
-          functionName: "addBand",
-          args: [gameId],
-        });
+          const hash = await walletClient.writeContract(request);
+          await publicClient.waitForTransactionReceipt({ hash });
 
-        const hash = await walletClient.sendTransaction({
-          to: CONTRACT_ADDRESS,
-          data,
-          gas: GAS_LIMITS.addBand,
-          nonce,
-          ...GAS_PRICE,
-        });
+          return hash;
+        } catch (err) {
+          const errorMsg = (err as Error).message || "";
 
-        // Wait for confirmation
-        await publicClient.waitForTransactionReceipt({ hash });
-
-        return hash;
-      } catch (err) {
-        const errorMsg = (err as Error).message || "";
-
-        // Retry on "insufficient balance" errors (RPC inconsistency)
-        if (errorMsg.includes("insufficient balance") && attempt < maxRetries) {
-          console.warn(`addBandWithBurner attempt ${attempt + 1} failed, retrying...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
-        }
+          // Retry on "insufficient balance" errors (RPC inconsistency)
+          if (errorMsg.includes("insufficient balance") && attempt < maxRetries) {
+            console.warn(`addBandWithBurner attempt ${attempt + 1} failed, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
 
           setState(prev => ({ ...prev, error: errorMsg }));
           return null;
@@ -581,44 +570,33 @@ export function useBurnerWallet(userAddress: `0x${string}` | undefined) {
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
           const walletClient = createWalletClient({
-          account: burnerAccount,
-          chain: MONAD_CHAIN,
-          transport: http(),
-        });
+            account: burnerAccount,
+            chain: MONAD_CHAIN,
+            transport: http(),
+          });
 
-        // Get fresh nonce
-        const nonce = await publicClient.getTransactionCount({
-          address: burnerAccount.address,
-          blockTag: "pending",
-        });
+          // Simulate first, then use the request
+          const { request } = await publicClient.simulateContract({
+            address: CONTRACT_ADDRESS,
+            abi: CONTRACT_ABI,
+            functionName: "cashOut",
+            args: [gameId],
+            account: burnerAccount,
+          });
 
-        const data = encodeFunctionData({
-          abi: CONTRACT_ABI,
-          functionName: "cashOut",
-          args: [gameId],
-        });
+          const hash = await walletClient.writeContract(request);
+          await publicClient.waitForTransactionReceipt({ hash });
 
-        const hash = await walletClient.sendTransaction({
-          to: CONTRACT_ADDRESS,
-          data,
-          gas: GAS_LIMITS.cashOut,
-          nonce,
-          ...GAS_PRICE,
-        });
+          return hash;
+        } catch (err) {
+          const errorMsg = (err as Error).message || "";
 
-        // Wait for confirmation
-        await publicClient.waitForTransactionReceipt({ hash });
-
-        return hash;
-      } catch (err) {
-        const errorMsg = (err as Error).message || "";
-
-        // Retry on "insufficient balance" errors (RPC inconsistency)
-        if (errorMsg.includes("insufficient balance") && attempt < maxRetries) {
-          console.warn(`cashOutWithBurner attempt ${attempt + 1} failed, retrying...`);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          continue;
-        }
+          // Retry on "insufficient balance" errors (RPC inconsistency)
+          if (errorMsg.includes("insufficient balance") && attempt < maxRetries) {
+            console.warn(`cashOutWithBurner attempt ${attempt + 1} failed, retrying...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+          }
 
           setState(prev => ({ ...prev, error: errorMsg }));
           return null;
